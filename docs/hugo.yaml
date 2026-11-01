@@ -33,9 +33,18 @@ menu:
 
 params:
   description: "A software factory: one durable process per repository, working the board through agent sessions."
+  theme:
+    default: system
+    displayToggle: true
   navbar:
-    displayTitle: true
-    displayLogo: false
+    displayTitle: false # the logo already contains the "ncxten" wordmark
+    displayLogo: true
+    logo:
+      path: images/logo.svg
+      dark: images/logo-dark.svg
+      link: /
+      width: 109
+      height: 28
   page:
     width: normal
   footer:

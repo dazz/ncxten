@@ -1,0 +1,290 @@
+/*
+ * ncxten theme for Hextra (>= v0.10, Tailwind CSS v4, utility prefix "hx:")
+ * Hextra loads this file automatically from assets/css/custom.css, after its own compiled CSS.
+ * Palette built after Refactoring UI: hand-picked HSL shades, warm greys, fixed scales.
+ * Source of truth: brand/palette.json. Do not use lighten()/darken(); only these shades.
+ */
+
+/* ---------------------------------------------------------------- 1. Fonts (self-hosted, OFL) */
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("../../fonts/barlow-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Barlow"; font-style: italic; font-weight: 400; font-display: swap;
+  src: url("../../fonts/barlow-latin-400-italic.woff2") format("woff2"); }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("../../fonts/barlow-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("../../fonts/barlow-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("../../fonts/barlow-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("../../fonts/barlow-semi-condensed-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("../../fonts/barlow-semi-condensed-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("../../fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-style: italic; font-weight: 400; font-display: swap;
+  src: url("../../fonts/jetbrains-mono-latin-400-italic.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("../../fonts/jetbrains-mono-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("../../fonts/jetbrains-mono-latin-700-normal.woff2") format("woff2"); }
+
+/* ---------------------------------------------------------------- 2. Palette tokens */
+:root {
+  --ncx-grey-50: #FAF9F4;
+  --ncx-grey-100: #F3F1EC;
+  --ncx-grey-200: #E5E2DC;
+  --ncx-grey-300: #D1CDC7;
+  --ncx-grey-400: #AAA49D;
+  --ncx-grey-500: #777069;
+  --ncx-grey-600: #5E5650;
+  --ncx-grey-700: #48423C;
+  --ncx-grey-800: #302B27;
+  --ncx-grey-900: #201B18;
+  --ncx-grey-950: #120F0D;
+  --ncx-signal-50: #FFF9F0;
+  --ncx-signal-100: #FFF1DB;
+  --ncx-signal-200: #FFD7A6;
+  --ncx-signal-300: #FFB870;
+  --ncx-signal-400: #FD9342;
+  --ncx-signal-500: #FA6814;
+  --ncx-signal-600: #DB4B0A;
+  --ncx-signal-700: #AF360D;
+  --ncx-signal-800: #83250C;
+  --ncx-signal-900: #57170A;
+  --ncx-signal-950: #370D06;
+  --ncx-green-50: #F3FCF4;
+  --ncx-green-100: #E4F6E7;
+  --ncx-green-200: #B9E6C3;
+  --ncx-green-300: #91D4A3;
+  --ncx-green-400: #4EC674;
+  --ncx-green-500: #299952;
+  --ncx-green-600: #1E8049;
+  --ncx-green-700: #15663D;
+  --ncx-green-800: #0E4E31;
+  --ncx-green-900: #093523;
+  --ncx-green-950: #052418;
+  --ncx-red-50: #FFF5F5;
+  --ncx-red-100: #FEE7E8;
+  --ncx-red-200: #FABABE;
+  --ncx-red-300: #F49096;
+  --ncx-red-400: #EA5D68;
+  --ncx-red-500: #DD2C3E;
+  --ncx-red-600: #C21E34;
+  --ncx-red-700: #A0182F;
+  --ncx-red-800: #7B1227;
+  --ncx-red-900: #550C1D;
+  --ncx-red-950: #360713;
+  --ncx-amber-50: #FFFCEB;
+  --ncx-amber-100: #FFF7D1;
+  --ncx-amber-200: #FEE992;
+  --ncx-amber-300: #FDD653;
+  --ncx-amber-400: #FCC12B;
+  --ncx-amber-500: #FBA904;
+  --ncx-amber-600: #D07E06;
+  --ncx-amber-700: #A65907;
+  --ncx-amber-800: #7A3A08;
+  --ncx-amber-900: #4F2208;
+  --ncx-amber-950: #341404;
+  --ncx-blue-50: #F0F8FF;
+  --ncx-blue-100: #E7F2FE;
+  --ncx-blue-200: #BAD9FA;
+  --ncx-blue-300: #8EBEF5;
+  --ncx-blue-400: #5B9AEC;
+  --ncx-blue-500: #2A72DF;
+  --ncx-blue-600: #1F58C1;
+  --ncx-blue-700: #1C429C;
+  --ncx-blue-800: #142D78;
+  --ncx-blue-900: #0E1C53;
+  --ncx-blue-950: #081035;
+
+  --ncx-font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --ncx-font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ncx-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---------------------------------------------------------------- 3. Map onto Hextra / Tailwind variables
+ * Hextra derives its primary scale from hue/saturation/lightness with a fixed hue. We replace the
+ * computed shades with the hand-picked ones (hue rotates across the scale, see Refactoring UI).
+ * gray, neutral and slate all become the same warm grey, so every grey in the theme matches. */
+:root {
+  --primary-hue: 22deg;
+  --primary-saturation: 96%;
+  --primary-lightness: 53%;
+  --hx-color-primary-50: var(--ncx-signal-50);
+  --hx-color-primary-100: var(--ncx-signal-100);
+  --hx-color-primary-200: var(--ncx-signal-200);
+  --hx-color-primary-300: var(--ncx-signal-300);
+  --hx-color-primary-400: var(--ncx-signal-400);
+  --hx-color-primary-500: var(--ncx-signal-500);
+  --hx-color-primary-600: var(--ncx-signal-600);
+  --hx-color-primary-700: var(--ncx-signal-700);
+  --hx-color-primary-800: var(--ncx-signal-800);
+  --hx-color-primary-900: var(--ncx-signal-900);
+  --hx-color-primary-950: var(--ncx-signal-950);
+  --hx-color-gray-50: var(--ncx-grey-50);
+  --hx-color-gray-100: var(--ncx-grey-100);
+  --hx-color-gray-200: var(--ncx-grey-200);
+  --hx-color-gray-300: var(--ncx-grey-300);
+  --hx-color-gray-400: var(--ncx-grey-400);
+  --hx-color-gray-500: var(--ncx-grey-500);
+  --hx-color-gray-600: var(--ncx-grey-600);
+  --hx-color-gray-700: var(--ncx-grey-700);
+  --hx-color-gray-800: var(--ncx-grey-800);
+  --hx-color-gray-900: var(--ncx-grey-900);
+  --hx-color-gray-950: var(--ncx-grey-950);
+  --hx-color-neutral-50: var(--ncx-grey-50);
+  --hx-color-neutral-100: var(--ncx-grey-100);
+  --hx-color-neutral-200: var(--ncx-grey-200);
+  --hx-color-neutral-300: var(--ncx-grey-300);
+  --hx-color-neutral-400: var(--ncx-grey-400);
+  --hx-color-neutral-500: var(--ncx-grey-500);
+  --hx-color-neutral-600: var(--ncx-grey-600);
+  --hx-color-neutral-700: var(--ncx-grey-700);
+  --hx-color-neutral-800: var(--ncx-grey-800);
+  --hx-color-neutral-900: var(--ncx-grey-900);
+  --hx-color-neutral-950: var(--ncx-grey-950);
+  --hx-color-slate-50: var(--ncx-grey-50);
+  --hx-color-slate-100: var(--ncx-grey-100);
+  --hx-color-slate-200: var(--ncx-grey-200);
+  --hx-color-slate-300: var(--ncx-grey-300);
+  --hx-color-slate-400: var(--ncx-grey-400);
+  --hx-color-slate-500: var(--ncx-grey-500);
+  --hx-color-slate-600: var(--ncx-grey-600);
+  --hx-color-slate-700: var(--ncx-grey-700);
+  --hx-color-slate-800: var(--ncx-grey-800);
+  --hx-color-slate-900: var(--ncx-grey-900);
+  --hx-color-slate-950: var(--ncx-grey-950);
+  --hx-color-green-50: var(--ncx-green-50);
+  --hx-color-green-100: var(--ncx-green-100);
+  --hx-color-green-200: var(--ncx-green-200);
+  --hx-color-green-300: var(--ncx-green-300);
+  --hx-color-green-400: var(--ncx-green-400);
+  --hx-color-green-500: var(--ncx-green-500);
+  --hx-color-green-600: var(--ncx-green-600);
+  --hx-color-green-700: var(--ncx-green-700);
+  --hx-color-green-800: var(--ncx-green-800);
+  --hx-color-green-900: var(--ncx-green-900);
+  --hx-color-green-950: var(--ncx-green-950);
+  --hx-color-red-50: var(--ncx-red-50);
+  --hx-color-red-100: var(--ncx-red-100);
+  --hx-color-red-200: var(--ncx-red-200);
+  --hx-color-red-300: var(--ncx-red-300);
+  --hx-color-red-400: var(--ncx-red-400);
+  --hx-color-red-500: var(--ncx-red-500);
+  --hx-color-red-600: var(--ncx-red-600);
+  --hx-color-red-700: var(--ncx-red-700);
+  --hx-color-red-800: var(--ncx-red-800);
+  --hx-color-red-900: var(--ncx-red-900);
+  --hx-color-red-950: var(--ncx-red-950);
+  --hx-color-amber-50: var(--ncx-amber-50);
+  --hx-color-amber-100: var(--ncx-amber-100);
+  --hx-color-amber-200: var(--ncx-amber-200);
+  --hx-color-amber-300: var(--ncx-amber-300);
+  --hx-color-amber-400: var(--ncx-amber-400);
+  --hx-color-amber-500: var(--ncx-amber-500);
+  --hx-color-amber-600: var(--ncx-amber-600);
+  --hx-color-amber-700: var(--ncx-amber-700);
+  --hx-color-amber-800: var(--ncx-amber-800);
+  --hx-color-amber-900: var(--ncx-amber-900);
+  --hx-color-amber-950: var(--ncx-amber-950);
+  --hx-color-blue-50: var(--ncx-blue-50);
+  --hx-color-blue-100: var(--ncx-blue-100);
+  --hx-color-blue-200: var(--ncx-blue-200);
+  --hx-color-blue-300: var(--ncx-blue-300);
+  --hx-color-blue-400: var(--ncx-blue-400);
+  --hx-color-blue-500: var(--ncx-blue-500);
+  --hx-color-blue-600: var(--ncx-blue-600);
+  --hx-color-blue-700: var(--ncx-blue-700);
+  --hx-color-blue-800: var(--ncx-blue-800);
+  --hx-color-blue-900: var(--ncx-blue-900);
+  --hx-color-blue-950: var(--ncx-blue-950);
+  --hx-color-white: var(--ncx-grey-50);   /* page background, navbar, sticky bars */
+  --hx-color-black: var(--ncx-grey-950);
+  --hx-color-dark: var(--ncx-grey-950);   /* page background in dark mode */
+  --hx-font-sans: var(--ncx-font-body);
+  --hx-font-mono: var(--ncx-font-mono);
+  --hx-default-font-family: var(--ncx-font-body);
+  --hx-default-mono-font-family: var(--ncx-font-mono);
+}
+html.dark {
+  --primary-hue: 22deg;
+  --primary-saturation: 96%;
+  --primary-lightness: 53%;
+}
+
+/* ---------------------------------------------------------------- 4. Base */
+body { color: var(--ncx-grey-900); }
+html.dark body { color: var(--ncx-grey-100); }
+::selection { background: var(--ncx-signal-200); color: var(--ncx-grey-950); }
+html.dark ::selection { background: var(--ncx-signal-800); color: var(--ncx-grey-50); }
+
+h1, h2, h3, h4 { font-family: var(--ncx-font-display); letter-spacing: -0.005em; }
+/* Barlow has a small x-height; 17px keeps running text as legible as 16px in most faces */
+.content { font-size: 1.0625rem; }
+/* ...but keep code at Hextra's original size (about 13px), so wide code blocks don't start scrolling */
+.content .hextra-code-block { font-size: 0.845em; }
+
+/* ---------------------------------------------------------------- 5. Accessible links
+ * Hextra uses primary-600 for links: 3.97:1 on the page background, below WCAG AA (4.5:1).
+ * primary-700 reaches 5.9:1 in light mode, primary-300 reaches 11:1 in dark mode. */
+.content a:not(.not-prose):not(.not-prose *) { color: var(--ncx-signal-700); }
+html.dark .content a:not(.not-prose):not(.not-prose *) { color: var(--ncx-signal-300); }
+
+/* ---------------------------------------------------------------- 6. Hero button
+ * Hextra: white text on primary-600 (3.97:1). Dark text on primary-500 reads like a warning sign (5.7:1). */
+a[class~="hx:bg-primary-600"][class~="hx:text-white"] {
+  background-color: var(--ncx-signal-500);
+  color: var(--ncx-grey-900);
+  font-weight: 600;
+}
+a[class~="hx:bg-primary-600"][class~="hx:text-white"]:hover { background-color: var(--ncx-signal-400); }
+
+/* ---------------------------------------------------------------- 7. Sidebar active item in dark mode
+ * Hextra: primary-600 text on a 10% tint, about 4:1. primary-300 is clearly readable. */
+html.dark .hextra-sidebar-active-item { color: var(--ncx-signal-300); }
+
+/* ---------------------------------------------------------------- 8. Code blocks: grey, not primary-tinted */
+.hextra-code-block pre,
+.content pre:not(.not-prose pre) { background-color: var(--ncx-grey-100); }
+.hextra-code-block .hextra-code-filename { background-color: var(--ncx-grey-200); color: var(--ncx-grey-700); }
+html.dark .hextra-code-block pre,
+html.dark .content pre:not(.not-prose pre) { background-color: var(--ncx-grey-900); }
+html.dark .hextra-code-block .hextra-code-filename { background-color: var(--ncx-grey-800); color: var(--ncx-grey-300); }
+
+/* ---------------------------------------------------------------- 9. Sticky bars at the bottom of sidebar and TOC
+ * Hextra hard-codes their fade shadow as white / #111; match it to the page background instead. */
+[class*="shadow-[0_-12px_16px_"] { box-shadow: 0 -12px 16px var(--hx-color-white); }
+html.dark [class*="shadow-[0_-12px_16px_"] { box-shadow: 0 -12px 16px var(--hx-color-dark); }
+
+/* ---------------------------------------------------------------- 10. Syntax highlighting from the palette
+ * Keys warm, strings green, numbers blue, comments grey. Plain YAML values stay in the text colour. */
+.highlight .chroma { color: var(--ncx-grey-900); }
+.highlight .chroma :is(.k, .kd, .kn, .kp, .kr, .kt, .ow) { color: var(--ncx-grey-900); font-weight: 600; }
+.highlight .chroma :is(.nt, .na, .py, .nl, .nv, .vc, .vg, .vi, .vm) { color: var(--ncx-signal-800); }
+.highlight .chroma :is(.nf, .fm, .nc, .nn, .nd, .ne, .nb, .bp) { color: var(--ncx-blue-800); }
+.highlight .chroma :is(.s, .s1, .s2, .sa, .sb, .sc, .dl, .sd, .se, .sh, .si, .sx, .sr, .ss) { color: var(--ncx-green-700); }
+.highlight .chroma :is(.m, .mb, .mf, .mh, .mi, .mo, .il, .kc, .no) { color: var(--ncx-blue-700); }
+.highlight .chroma :is(.l, .ld, .n, .nx) { color: inherit; }
+.highlight .chroma :is(.c, .c1, .cm, .ch, .cs, .cp, .cpf) { color: var(--ncx-grey-600); font-style: italic; }
+.highlight .chroma :is(.o, .p) { color: var(--ncx-grey-700); }
+.highlight .chroma .gd { color: var(--ncx-red-800); background-color: var(--ncx-red-100); }
+.highlight .chroma .gi { color: var(--ncx-green-800); background-color: var(--ncx-green-100); }
+.highlight .chroma .err { color: var(--ncx-red-700); background: none; }
+.highlight .chroma .hl { background-color: var(--ncx-signal-100); }
+.highlight .chroma :is(.ln, .lnt) { color: var(--ncx-grey-500); }
+
+html.dark .highlight .chroma { color: var(--ncx-grey-100); }
+html.dark .highlight .chroma :is(.k, .kd, .kn, .kp, .kr, .kt, .ow) { color: var(--ncx-grey-50); font-weight: 600; }
+html.dark .highlight .chroma :is(.nt, .na, .py, .nl, .nv, .vc, .vg, .vi, .vm) { color: var(--ncx-signal-300); }
+html.dark .highlight .chroma :is(.nf, .fm, .nc, .nn, .nd, .ne, .nb, .bp) { color: var(--ncx-blue-200); }
+html.dark .highlight .chroma :is(.s, .s1, .s2, .sa, .sb, .sc, .dl, .sd, .se, .sh, .si, .sx, .sr, .ss) { color: var(--ncx-green-300); }
+html.dark .highlight .chroma :is(.m, .mb, .mf, .mh, .mi, .mo, .il, .kc, .no) { color: var(--ncx-blue-300); }
+html.dark .highlight .chroma :is(.l, .ld, .n, .nx) { color: inherit; }
+html.dark .highlight .chroma :is(.c, .c1, .cm, .ch, .cs, .cp, .cpf) { color: var(--ncx-grey-400); font-style: italic; }
+html.dark .highlight .chroma :is(.o, .p) { color: var(--ncx-grey-300); }
+html.dark .highlight .chroma .gd { color: var(--ncx-red-200); background-color: var(--ncx-red-950); }
+html.dark .highlight .chroma .gi { color: var(--ncx-green-200); background-color: var(--ncx-green-950); }
+html.dark .highlight .chroma .err { color: var(--ncx-red-300); background: none; }
+html.dark .highlight .chroma .hl { background-color: var(--ncx-grey-800); }
+html.dark .highlight .chroma :is(.ln, .lnt) { color: var(--ncx-grey-500); }
