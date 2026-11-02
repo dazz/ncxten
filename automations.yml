@@ -1,0 +1,6 @@
+# What this repo proposes to automate (the policy allows — docs/automations).
+# One automation for now: the factory's proof-of-life for the 002 DoD run.
+# Real work on the factory's own code starts with project zero.
+automations:
+  - name: smoke
+    skill: smoke
