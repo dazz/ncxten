@@ -4,3 +4,4 @@
 automations:
   - name: smoke
     skill: smoke
+    gate: make ci
