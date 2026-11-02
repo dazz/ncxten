@@ -31,7 +31,7 @@ policy:
     time: PT20M
 ```
 
-See [Configuration](../configuration) for every field.
+See [The policy](../policy) for every field.
 
 ## 2. Declare automations in the repo
 

@@ -10,7 +10,7 @@ the docs never rotate synonyms.
 |---|---|
 | **factory** | the whole system: one durable runner that builds repositories by executing policies, tick by tick |
 | **project** | one repository under the factory's care — and the one long-running process that cares for it (`ncxten start <owner>/<repo>`) |
-| **policy** | your side of the contract: one YAML file per project under the config root. It allows — tick interval, limits, harness. See [Configuration](../configuration) |
+| **policy** | your side of the contract: one YAML file per project under the config root. It allows — tick interval, limits, harness. See [The policy](../policy) |
 | **automation** | one entry in the repository's `automations.yml` — the repo's side: what it proposes to automate. See [Automations](../automations) |
 | **tick** | the schedule beat. Each tick checks for new input and drains: pass by pass, until a pass finds nothing |
 | **pass** | one round within a tick: ask for findings, take the first automation with new input, run exactly one session |

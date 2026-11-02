@@ -1,6 +1,7 @@
 ---
-title: Configuration
+title: The policy
 weight: 3
+aliases: [/docs/configuration]
 ---
 
 One policy file per project: `<config-dir>/<owner>/<repo>.yaml`. The policy is

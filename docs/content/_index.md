@@ -29,6 +29,6 @@ toc: false
 {{< cards >}}
   {{< card link="docs/getting-started" title="Getting started" subtitle="Run your first project process in a container." icon="play" >}}
   {{< card link="docs/how-it-works" title="How it works" subtitle="Deployment, the process tree, one tick, and what a session may do." icon="map" >}}
-  {{< card link="docs/configuration" title="Configuration" subtitle="The policy file: tick, limits, checkout." icon="adjustments" >}}
+  {{< card link="docs/policy" title="The policy" subtitle="One YAML file per project: tick, limits, checkout." icon="adjustments" >}}
   {{< card link="docs/cli" title="CLI" subtitle="start, tick, resume, status — and the exit codes." icon="terminal" >}}
 {{< /cards >}}

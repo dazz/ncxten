@@ -5,7 +5,7 @@ weight: 5
 
 `ncxten <command> <project>` — the project ID is always `owner/repo`, the same
 string you see in every event line. All commands take `--config-dir` and
-`--state-dir` (see [Configuration](../configuration)).
+`--state-dir` (see [The policy](../policy)).
 
 {{< callout type="warning" >}}
 `tick` and `resume` nudge a running process with a signal, so run them **in
