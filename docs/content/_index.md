@@ -14,12 +14,16 @@ toc: false
 {{< /hextra/hero-headline >}}
 </div>
 
-<div class="hx:mb-12">
+<div class="hx:mb-6">
 {{< hextra/hero-subtitle >}}
   One durable process per repository. The repo proposes automations,
   your policy allows them, and every decision lands in an append-only
   event log before anything happens.
 {{< /hextra/hero-subtitle >}}
+</div>
+
+<div class="hx:mb-12">
+{{< hextra/hero-button text="Get started" link="docs/getting-started" >}}
 </div>
 
 {{< cards >}}

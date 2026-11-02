@@ -288,3 +288,46 @@ html.dark .highlight .chroma .gi { color: var(--ncx-green-200); background-color
 html.dark .highlight .chroma .err { color: var(--ncx-red-300); background: none; }
 html.dark .highlight .chroma .hl { background-color: var(--ncx-grey-800); }
 html.dark .highlight .chroma :is(.ln, .lnt) { color: var(--ncx-grey-500); }
+
+/* ---------------------------------------------------------------- 11. Site additions (below the package, per AGENT.md)
+ * a) Muted text was grey-500 on grey-50 (4.5:1, AA but faint on the warm background):
+ *    one step darker in light mode. Dark mode keeps grey-400 (7.7:1).
+ * b) The home page had no primary-coloured element at all: badge and card icons
+ *    get Signal accents (pairs from the AGENT.md contrast table).
+ * Utility-class selectors — re-check after every Hextra update. */
+
+/* a) muted text: sidebar items, TOC links, card subtitles, footer.
+ * Light mode only — unscoped, this rule loads after the bundle and would also
+ * beat the dark: variant, leaving grey-600 on grey-950 (about 2.5:1). */
+html:not(.dark) [class~="hx:text-gray-500"] { color: var(--ncx-grey-600); }
+
+/* b) hero badge: signal-800 on signal-100 (8.4:1) instead of grey on grey */
+a[class~="hx:rounded-full"][class~="hx:text-xs"][class~="hx:border"] {
+  color: var(--ncx-signal-800);
+  background-color: var(--ncx-signal-100);
+  border-color: var(--ncx-signal-200);
+}
+a[class~="hx:rounded-full"][class~="hx:text-xs"][class~="hx:border"]:hover {
+  border-color: var(--ncx-signal-400);
+}
+html.dark a[class~="hx:rounded-full"][class~="hx:text-xs"][class~="hx:border"] {
+  color: var(--ncx-signal-300);
+  background-color: var(--ncx-signal-950);
+  border-color: var(--ncx-signal-800);
+}
+
+/* b) card icons as small Signal accents; titles stay grey */
+.hextra-card-icon svg { color: var(--ncx-signal-600); }
+html.dark .hextra-card-icon svg { color: var(--ncx-signal-400); }
+
+/* cards as light panels, as in the design mock: white surface on the grey-50 page.
+ * White is the one value outside the scales — the mock's panels sit on white,
+ * and grey-50 is already taken by the page itself. */
+:root { --ncx-paper: #FFFFFF; }
+.hextra-card {
+  background-color: var(--ncx-paper);
+  box-shadow: 0 1px 2px rgba(32, 27, 24, 0.04);
+}
+.hextra-card:hover { background-color: var(--ncx-grey-50); }
+html.dark .hextra-card { background-color: var(--ncx-grey-900); box-shadow: none; }
+html.dark .hextra-card:hover { background-color: var(--ncx-grey-800); }
