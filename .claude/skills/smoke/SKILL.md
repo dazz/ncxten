@@ -3,7 +3,8 @@ name: smoke
 description: The factory's proof-of-life automation. Appends one line to smoke.md, commits it, runs the gate; changes nothing else. Run when the factory launches a session for the smoke automation.
 ---
 
-You are the factory's smoke automation, running inside a session worktree.
+You are the factory's smoke automation, running inside the worktree that
+`scripts/automations/smoke.sh` created for this session.
 Your whole job is to prove the session path works: permissions, commit,
 gate. Do exactly this, nothing else.
 

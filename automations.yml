@@ -3,5 +3,5 @@
 # Real work on the factory's own code starts with project zero.
 automations:
   - name: smoke
-    skill: smoke
-    gate: make ci
+    run: bash scripts/automations/smoke.sh   # the session: exit 0 = succeeded
+    gate: make ci                            # declared for 003; the script runs it itself today
