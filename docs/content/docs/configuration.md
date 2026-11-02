@@ -44,9 +44,9 @@ policy:
 
 {{< callout type="info" >}}
 Every field is declared and validated from the first release on, so a complete
-policy passes unchanged — but the current slice only *acts* on `repository`,
+policy passes unchanged — but today ncxten only *acts* on `repository`,
 `forge`, `paths.checkout`, `tick` and `limits.turns`/`limits.time`. The rest
-takes effect in later slices.
+takes effect as the features behind it ship.
 {{< /callout >}}
 
 ## The two roots

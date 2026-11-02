@@ -19,8 +19,8 @@ Three files are yours:
 The policy allows, the repo proposes, the log remembers.
 
 {{< callout type="info" >}}
-The project is in open development. The current slice ships the full control
+The project is in open development. Today ncxten ships the full control
 loop — scheduling, sessions, pause/resume, crash recovery, observability —
-with a **fake agent harness**. Real agent harnesses (Claude Code and friends)
-arrive in the next slices.
+with a **fake agent harness**. Real agent sessions (Claude Code first) are
+what comes next.
 {{< /callout >}}

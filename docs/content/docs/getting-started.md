@@ -3,9 +3,12 @@ title: Getting started
 weight: 1
 ---
 
-The factory ships as a container image with an s6 supervisor inside; the CLI
-is a single binary. Everything lives under two roots on your machine, mounted
-into the container at the same paths:
+The factory runs as a container image with an [s6](../glossary) supervisor
+inside; the CLI is a single binary. The image is not on a registry yet:
+`docker compose up` builds it from the repository's
+[`docker/ncxten/Dockerfile`](https://github.com/dazz/ncxten/blob/main/docker/ncxten/Dockerfile).
+Everything lives under two roots on your machine, mounted into the container
+at the same paths:
 
 ```
 ~/.config/ncxten/<owner>/<repo>.yaml      # policies — one file per project

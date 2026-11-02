@@ -14,7 +14,7 @@ automations:
     skill: react                 # which skill the session runs
   - name: board-walker
     skill: implement
-    gate: make ci                # optional — declared now, gates run in a later slice
+    gate: make ci                # optional — declared now, not run yet
 ```
 
 **List order is priority.** Each tick drains pass by pass: every pass asks the

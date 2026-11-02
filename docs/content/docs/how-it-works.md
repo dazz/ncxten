@@ -5,8 +5,8 @@ weight: 2
 
 Six views of the same machine: where it runs, what runs inside, what one tick
 does, who owns which file, what a session may do, and how a session ends.
-Dashed parts are not shipped yet — each carries a *from 002* or *from 003*
-label. Everything solid matches the code on `main`.
+Solid parts match the shipped code; dashed parts are **planned** and labeled
+so. Unfamiliar words are in the [glossary](../glossary).
 
 ## Deployment
 
@@ -16,38 +16,35 @@ flowchart TB
     subgraph fc["factory container"]
       ncx["ncxten process<br/>deterministic, no model"]
       agent["claude -p (agent)<br/>only during a session"]
-      ncx -.->|"starts, from 002"| agent
+      ncx -.-> agent
     end
-    vector["Vector container"]
+    vector["Vector container<br/>reads events"]
     subgraph vols["volumes (host paths)"]
-      pol["policy<br/><code>~/.config/ncxten</code>"]
-      state["event log + lock + state<br/><code>~/.local/state/ncxten</code>"]
+      pol["policy"]
       wt["worktrees<br/>one per session"]
-      login["Claude config dir<br/>login"]
+      login["Claude Code<br/>login"]
+      ev["event log<br/>JSONL"]
     end
-    co["checkout<br/>a local git clone"]
   end
-  bs["Better Stack<br/>logs, alert, uptime"]
+  bs["Better Stack<br/>logs, alert"]
   anthropic["Anthropic<br/>the model"]
-  gh["GitHub<br/>issues, PRs"]
-  ncx -->|reads| pol
-  ncx -->|writes| state
-  ncx -.->|"adds/removes, from 002"| wt
-  ncx -->|"reads automations.yml"| co
-  agent -.->|"works in, from 002"| wt
-  agent -.->|"from 002"| login
-  agent -.->|"API calls, from 002"| anthropic
-  vector -->|"reads events, read-only"| state
+  ncx --> pol
+  ncx --> ev
+  agent -.-> wt
+  agent -.-> login
+  agent -.-> anthropic
+  vector --> ev
   vector --> bs
-  ncx -.->|"from 003"| gh
-  classDef future stroke-dasharray: 5 5
-  class agent,wt,login,anthropic,gh future
+  classDef planned stroke-dasharray: 5 5
+  class agent,wt,login,anthropic planned
 ```
 
-The factory container and Vector share nothing but the events directory, and
-Vector mounts it read-only. The permission ceiling (managed settings) is baked
-into the image, not on a volume — no session can edit it. From 003, gate/CI
-containers start beside the factory container; they are not drawn yet.
+The `ncxten` process reads the policy and writes the event log; the agent
+works only inside its worktree; Vector reads the events read-only and ships
+them to Better Stack. The permission ceiling (managed settings) is baked into
+the image, not on a volume — no session can edit it. Planned and not drawn:
+GitHub as the source of work, and gate containers beside the factory
+container.
 
 ## The process tree
 
@@ -59,11 +56,11 @@ flowchart TB
   claude["claude -p"]
   tools["its tools: sh, git, make ci"]
   s6 --> p1
-  p1 -.->|"only during a session, from 002"| grp
+  p1 -.->|"planned — only during a session"| grp
   grp -.-> claude
   claude -.-> tools
-  classDef future stroke-dasharray: 5 5
-  class grp,claude,tools future
+  classDef planned stroke-dasharray: 5 5
+  class grp,claude,tools planned
 ```
 
 The `ncxten` process is deterministic and has no model: it schedules, decides
@@ -78,22 +75,19 @@ holds weights.
 sequenceDiagram
   participant T as timer
   participant N as ncxten process
-  participant C as checkout
   participant L as event log
-  participant W as worktree
   participant A as claude -p
   T->>N: tick due
-  N->>C: read automations.yml (default branch head)
-  N->>N: precheck: findings vs consumed inputs
+  N->>N: read automations.yml, check for new input
   alt new input found
-    N->>L: session started (consumes the input)
+    N->>L: session started
     rect rgba(128,128,128,0.12)
-      Note over N,A: from 002 — today a fake harness stands in
-      N->>W: git worktree add (session branch)
+      Note over N,A: planned — today a fake harness stands in
+      N->>N: create worktree
       N->>A: launch: skill, input, model, limits
       A-->>N: result: outcome + usage
       N->>L: session succeeded / failed / limit
-      N->>W: remove — forced, commits survive on the branch
+      N->>N: remove worktree
       N->>L: workspace removed
     end
     N->>N: next pass
@@ -115,16 +109,16 @@ finds nothing.
 | `automations.yml` | default branch of the repository | you (via merge) | `ncxten`, every tick |
 | event log | `<state-root>/events/<owner>/<repo>.jsonl` | `ncxten` only | `ncxten` (replay), Vector, you |
 | pidfile + lock | `<state-root>/projects/<owner>/<repo>/ncxten.pid` | `ncxten` | the kernel (flock) |
-| worktrees *(from 002)* | under the project's state directory | the session | nobody else — removed after the session |
-| session branches *(from 002)* | the checkout's `.git` | the session (commits) | you; from 003 the forge |
-| Claude config dir *(from 002)* | a volume, `CLAUDE_CONFIG_DIR` | Claude Code (login, state) | Claude Code |
-| managed settings *(from 002)* | `/etc/claude-code/managed-settings.json`, in the image | the image build | Claude Code, every session |
+| worktrees *(planned)* | under the project's state directory | the session | nobody else — removed after the session |
+| session branches *(planned)* | the checkout's `.git` | the session (commits) | you; later also GitHub |
+| Claude Code login *(planned)* | a volume, `CLAUDE_CONFIG_DIR` | Claude Code | Claude Code |
+| managed settings *(planned)* | `/etc/claude-code/managed-settings.json`, in the image | the image build | Claude Code, every session |
 
 One writer per file is the rule everywhere: the event log has exactly one
 writer (the lock holder), the policy is yours alone, and the managed settings
 can only change with an image rebuild.
 
-## What a session may do *(from 002)*
+## What a session may do *(planned)*
 
 ```mermaid
 flowchart TB
@@ -132,8 +126,8 @@ flowchart TB
   at["--allowedTools — per launch<br/>the adapter's explicit rules"]
   repo["repo .claude/settings.json<br/>loaded, but cannot widen"]
   ms --> at --> repo
-  classDef future stroke-dasharray: 5 5
-  class ms,at,repo future
+  classDef planned stroke-dasharray: 5 5
+  class ms,at,repo planned
 ```
 
 Three layers, outermost wins: the image's managed settings disable all hooks
@@ -142,9 +136,9 @@ launch; whatever the repository's own settings add on top has no effect — a
 blanket permission bypass does not exist, Claude Code refuses it as root. What
 a session *can* still do in v1: it runs as root in the container, reads what
 the factory reads, and reaches the network through the harness. Isolation
-beyond the worktree is a later slice; the docs will not pretend otherwise.
+beyond the worktree comes later; the docs will not pretend otherwise.
 
-## A session's life *(from 002)*
+## A session's life *(planned)*
 
 ```mermaid
 stateDiagram-v2
@@ -163,6 +157,6 @@ stateDiagram-v2
 
 Every exit path ends at the same place: the worktree is removed, forced if
 dirty, and the removal is an event. What survives is on the session branch in
-the checkout — and in the log: outcome, usage, cost. Today (001) the
-lifecycle runs with the fake harness and without worktrees; `limit` arrives
-with 002.
+the checkout — and in the log: outcome, usage, cost. Today the lifecycle runs
+with the fake harness and without worktrees; `limit` arrives with the real
+one.
