@@ -133,10 +133,15 @@ flowchart TB
 Three layers, outermost wins: the image's managed settings disable all hooks
 and deny the config dir; the adapter passes the explicit allow rules for this
 launch; whatever the repository's own settings add on top has no effect — a
-blanket permission bypass does not exist, Claude Code refuses it as root. What
-a session *can* still do in v1: it runs as root in the container, reads what
-the factory reads, and reaches the network through the harness. Isolation
-beyond the worktree comes later; the docs will not pretend otherwise.
+blanket permission bypass does not exist, Claude Code refuses it as root. The
+allow list guards against accidents; it is **not a security boundary**: an
+allowed gate such as `make ci` runs whatever the worktree's Makefile says,
+and the session can edit that Makefile — the managed deny covers the file
+tools, not commands the gate starts. The boundary in v1 is the container and
+its VM, which hold only expendable access: the session runs as root in the
+container, reads what the factory reads, and reaches the network through the
+harness. Isolation beyond the worktree comes later; the docs will not
+pretend otherwise.
 
 ## A session's life *(planned)*
 
