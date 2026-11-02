@@ -1,6 +1,6 @@
 ---
 title: Automations
-weight: 3
+weight: 4
 ---
 
 `automations.yml` at the root of your repository declares what the repo

@@ -1,6 +1,6 @@
 ---
 title: Configuration
-weight: 2
+weight: 3
 ---
 
 One policy file per project: `<config-dir>/<owner>/<repo>.yaml`. The policy is
@@ -39,7 +39,7 @@ policy:
   merge-policy: approved-is-approved   # approved-is-approved | path-lax | patch-id | strict
   sensitive-paths: ["automations.yml"] # default
   trusted-authors: []
-  credentials: null                    # optional reference, never a secret value
+  # credentials: dazz/foo              # optional reference, never a secret value — omit, or set a string; null fails the strict schema
 ```
 
 {{< callout type="info" >}}

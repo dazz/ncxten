@@ -1,6 +1,6 @@
 ---
 title: CLI
-weight: 4
+weight: 5
 ---
 
 `ncxten <command> <project>` — the project ID is always `owner/repo`, the same

@@ -1,6 +1,6 @@
 ---
 title: The event log
-weight: 5
+weight: 6
 ---
 
 One JSONL file per project: `<state-root>/events/<owner>/<repo>.jsonl`. Every
@@ -26,8 +26,9 @@ Every line carries `schema`, `time`, `kind`, `outcome`, `repository` and
 | `session` / `started` → `succeeded` \| `failed` \| `aborted` | one agent session | info / warn |
 | `tick` / `idle` | a tick drained and found nothing more | info |
 | `tick` / `skipped` | tick during pause or running session (`detail`) | info |
-| `resume` / `resumed` \| `failed` \| `ignored` | the resume result | info / error |
-| `heartbeat` / `recorded` | liveness only, every 5 minutes — changes nothing | info |
+| `project` / `resumed` | pause lifted | info |
+| `resume` / `failed` \| `ignored` | resume did not lift the pause (`detail`) | error / info |
+| `project` / `heartbeat` | liveness only, every 5 minutes — changes nothing | info |
 
 ## The contract
 
