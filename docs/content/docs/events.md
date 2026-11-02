@@ -1,5 +1,5 @@
 ---
-title: The event log
+title: Event log
 weight: 6
 ---
 

@@ -1,5 +1,5 @@
 ---
-title: The policy
+title: Policy
 weight: 3
 aliases: [/docs/configuration]
 ---

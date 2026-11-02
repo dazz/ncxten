@@ -10,13 +10,13 @@ the docs never rotate synonyms.
 |---|---|
 | **factory** | the whole system: one durable runner that builds repositories by executing policies, tick by tick |
 | **project** | one repository under the factory's care — and the one long-running process that cares for it (`ncxten start <owner>/<repo>`) |
-| **policy** | your side of the contract: one YAML file per project under the config root. It allows — tick interval, limits, harness. See [The policy](../policy) |
+| **policy** | your side of the contract: one YAML file per project under the config root. It allows — tick interval, limits, harness. See [Policy](../policy) |
 | **automation** | one entry in the repository's `automations.yml` — the repo's side: what it proposes to automate. See [Automations](../automations) |
 | **tick** | the schedule beat. Each tick checks for new input and drains: pass by pass, until a pass finds nothing |
 | **pass** | one round within a tick: ask for findings, take the first automation with new input, run exactly one session |
 | **session** | one agent run for one input: own worktree, own limits, outcome and cost recorded as events |
 | **harness** | the agent CLI a session runs through — Claude Code first. The **fake harness** is a shipped stand-in with the same contract: deterministic, zero network, zero cost |
-| **event log** | one JSONL file per project, append-only, **schema v1** — written before the factory acts, replayed at start. The source of truth. See [The event log](../events) |
+| **event log** | one JSONL file per project, append-only, **schema v1** — written before the factory acts, replayed at start. The source of truth. See [Event log](../events) |
 | **config root / state root** | the two directories everything lives under (`~/.config/ncxten`, `~/.local/state/ncxten`); every path below them derives from the project ID |
 | **checkout** | the local git clone of your repository that the factory reads `automations.yml` from and branches worktrees off |
 | **worktree** | a git feature: one extra working directory sharing the clone's `.git`. The factory gives every session its own, and removes it after |
