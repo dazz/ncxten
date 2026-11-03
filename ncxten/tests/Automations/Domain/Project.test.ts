@@ -238,6 +238,110 @@ describe("automations revisions", () => {
   });
 });
 
+describe("the 002 session delta", () => {
+  const unit = { group: 4242, startedAt: 123456789 };
+
+  function launched(session = "s1"): Event {
+    return {
+      name: "SessionLaunched",
+      at,
+      automation: walker,
+      subject: ticket,
+      sessionId: sessionId(session),
+      unit,
+    };
+  }
+
+  test("SessionLaunched attaches the unit to the open session (FR-066)", () => {
+    const project = Project.replay([started(), launched()]);
+
+    expect(project.state()).toBe("running");
+    expect(project.openSession()?.unit).toEqual(unit);
+  });
+
+  test("a launch record for a different session changes nothing", () => {
+    const project = Project.replay([started("s1"), launched("s9")]);
+
+    expect(project.openSession()?.unit).toBeUndefined();
+  });
+
+  test("SessionLimited closes the session with outcome limit (FR-081)", () => {
+    const project = Project.replay([
+      started(),
+      launched(),
+      {
+        name: "SessionLimited",
+        at: later,
+        automation: walker,
+        subject: ticket,
+        sessionId: sessionId("s1"),
+        dimension: "time",
+      },
+    ]);
+
+    expect(project.state()).toBe("idle");
+    expect(project.openSession()).toBeUndefined();
+    expect(project.lastSession()).toEqual({ automation: walker, outcome: "limit", at: later });
+    // The limited session's input stays consumed (FR-035 holds uniformly).
+    expect(project.consumedRevision(walker, ticket)).toBe(revision("r3"));
+  });
+
+  test("started-today counts the UTC day's starts, the boundary at read time (FR-083)", () => {
+    const sameDay = new Date("2026-10-31T23:59:00.000Z");
+    const nextDay = new Date("2026-11-01T00:01:00.000Z");
+    const project = Project.replay([
+      started("s1", "r1"),
+      {
+        name: "SessionStarted",
+        at: sameDay,
+        automation: walker,
+        subject: subjectId("t2"),
+        revision: revision("r1"),
+        sessionId: sessionId("s2"),
+      },
+    ]);
+
+    expect(project.startedToday(at)).toBe(2);
+    // The day rolls over: the same fold answers 0 — nothing stored, nothing reset.
+    expect(project.startedToday(nextDay)).toBe(0);
+  });
+
+  test("a crash between start and launch rebuilds an open session without a unit (8c)", () => {
+    const project = Project.replay([started()]);
+
+    expect(project.openSession()?.sessionId).toBe(sessionId("s1"));
+    expect(project.openSession()?.unit).toBeUndefined();
+  });
+
+  test("BudgetExhausted sets the last drain limit — a capped project never looks quiet (FR-084)", () => {
+    const project = Project.replay([
+      { name: "BudgetExhausted", at: later, day: "2026-10-31", started: 3, cap: 3 },
+    ]);
+
+    expect(project.lastDrainLimit()).toEqual({
+      bound: "sessions-per-day",
+      detail: "started today 3 of 3",
+      at: later,
+    });
+    // The hit's input was NOT consumed (FR-083) — nothing else changed.
+    expect(project.state()).toBe("idle");
+  });
+
+  test("DrainBounded supersedes an older limit; nothing clears it", () => {
+    const project = Project.replay([
+      { name: "BudgetExhausted", at, day: "2026-10-31", started: 3, cap: 3 },
+      { name: "DrainBounded", at: later, cap: 5 },
+      { name: "ProjectIdled", at: later },
+    ]);
+
+    expect(project.lastDrainLimit()).toEqual({
+      bound: "sessions-per-drain",
+      detail: "ran 5 sessions this drain",
+      at: later,
+    });
+  });
+});
+
 describe("the extension rule", () => {
   test("replay ignores events this version does not know", () => {
     const unknown = { name: "SomethingNewer", at, extra: "field" } as unknown as Event;

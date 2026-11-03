@@ -1,12 +1,11 @@
-import type { Harness } from "~/Automations/Application/AutomationsPorts.ts";
+import type { Harness, LegacyHarnessOutcome } from "~/Automations/Application/AutomationsPorts.ts";
 import type { Automation } from "~/Automations/Domain/Automation.ts";
 import type { ConsumedInput } from "~/Automations/Domain/ConsumedInput.ts";
-import type { SessionOutcome } from "~/Automations/Domain/Event.ts";
 import { type AutomationName, automationName } from "~/Automations/Domain/Ids.ts";
 import type { Limits } from "~/Automations/Domain/Policy.ts";
 
 /** What one scripted session does when the harness runs it. */
-export type SessionScript = () => Promise<SessionOutcome>;
+export type SessionScript = () => Promise<LegacyHarnessOutcome>;
 
 export function succeed(): SessionScript {
   return () => Promise.resolve("succeeded");
@@ -18,7 +17,7 @@ export function fail(): SessionScript {
 
 /** Never resolves — the crash case: only the next generation's orphan abort ends it. */
 export function hangUntilAborted(): SessionScript {
-  return () => new Promise<SessionOutcome>(() => {});
+  return () => new Promise<LegacyHarnessOutcome>(() => {});
 }
 
 export interface HarnessCall {
@@ -40,7 +39,7 @@ export class FakeHarness implements Harness {
     this.scripts.set(automationName(automation), script);
   }
 
-  run(automation: Automation, input: ConsumedInput, limits: Limits): Promise<SessionOutcome> {
+  run(automation: Automation, input: ConsumedInput, limits: Limits): Promise<LegacyHarnessOutcome> {
     this.record.push({ automation, input, limits });
     const script = this.scripts.get(automation.name) ?? succeed();
     return script();

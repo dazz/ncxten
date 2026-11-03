@@ -1,7 +1,7 @@
 import type { Automation } from "~/Automations/Domain/Automation.ts";
 import type { Automations } from "~/Automations/Domain/Automations.ts";
 import type { ConsumedInput, Finding } from "~/Automations/Domain/ConsumedInput.ts";
-import type { Event, SessionOutcome } from "~/Automations/Domain/Event.ts";
+import type { Event } from "~/Automations/Domain/Event.ts";
 import type { AutomationName, CommitId } from "~/Automations/Domain/Ids.ts";
 import type { IsoDuration } from "~/Automations/Domain/IsoDuration.ts";
 import type { Limits, Policy } from "~/Automations/Domain/Policy.ts";
@@ -21,9 +21,16 @@ export interface Scheduler {
   sleep(milliseconds: number): Promise<void>;
 }
 
+/**
+ * 001's harness outcomes, pinned: the port is retired by the 002 re-cut
+ * (STACK: The cut) and never learns `limit` — the shim goes when the port's
+ * last consumers migrate to the process runner.
+ */
+export type LegacyHarnessOutcome = "succeeded" | "failed" | "aborted";
+
 /** Runs one session. The `FakeHarness` is a shipped adapter, not a test hack. */
 export interface Harness {
-  run(automation: Automation, input: ConsumedInput, limits: Limits): Promise<SessionOutcome>;
+  run(automation: Automation, input: ConsumedInput, limits: Limits): Promise<LegacyHarnessOutcome>;
 }
 
 /** The automation's deterministic precheck answers from here (slice 1). */

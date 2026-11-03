@@ -14,10 +14,35 @@ import type {
   SubjectId,
 } from "~/Automations/Domain/Ids.ts";
 
+import type { ReportedUsage } from "~/Automations/Domain/Usage.ts";
+
 export type Level = "info" | "warn" | "error";
 export type TickTrigger = "schedule" | "manual";
 export type SkipReason = "running" | "paused";
-export type SessionOutcome = "succeeded" | "failed" | "aborted";
+export type SessionOutcome = "succeeded" | "failed" | "aborted" | "limit";
+
+/**
+ * The fixed failure classes (FR-090): the class, never the text, is what the
+ * level derives from (FR-093) — `spawn` means the automation's command itself
+ * is broken (a human must act), `exit` means the work failed (the reason is
+ * in the session's output file; the factory cannot tell a failing task from
+ * a logged-out agent, spec Non-Goals).
+ */
+export type FailureCause = "spawn" | "exit";
+
+/** The only dimension the factory can observe from outside (FR-080/081). */
+export type LimitDimension = "time";
+
+/**
+ * The session's process group: group id + the leader's start time in kernel
+ * clock ticks (`/proc/<pid>/stat` field 22) — pids are recycled, so the pair
+ * is what re-verifies the unit later (FR-066). The audit identity; the
+ * operative cleanup identity is the environment mark pair.
+ */
+export interface ProcessUnit {
+  readonly group: number;
+  readonly startedAt: number;
+}
 
 /** The limits a session runs under, as the policy declares them. */
 export interface SessionLimits {
@@ -116,6 +141,20 @@ export interface SessionStarted {
   readonly sessionId: SessionId;
 }
 
+/**
+ * Written directly **after** the command started (FR-066): the start record
+ * precedes the launch (FR-092) and cannot know the unit. The recorded unit is
+ * the reap's audit identity and verified fast path.
+ */
+export interface SessionLaunched {
+  readonly name: "SessionLaunched";
+  readonly at: Date;
+  readonly automation: AutomationName;
+  readonly subject: SubjectId;
+  readonly sessionId: SessionId;
+  readonly unit: ProcessUnit;
+}
+
 export interface SessionFinished {
   readonly name: "SessionFinished";
   readonly at: Date;
@@ -123,6 +162,54 @@ export interface SessionFinished {
   readonly subject: SubjectId;
   readonly sessionId: SessionId;
   readonly outcome: "succeeded" | "failed";
+  /** Only on `failed` — the fixed class the level derives from (FR-093). */
+  readonly cause?: FailureCause;
+  /** The exit code, the spawn reason, or a result-file problem (FR-067). */
+  readonly detail?: string;
+  /** What the result file reported — omitted where unknown (FR-067). */
+  readonly usage?: ReportedUsage;
+}
+
+/**
+ * The factory ended the session at the time limit — the whole process group
+ * (FR-081). No usage: a killed command's result file is not read.
+ */
+export interface SessionLimited {
+  readonly name: "SessionLimited";
+  readonly at: Date;
+  readonly automation: AutomationName;
+  readonly subject: SubjectId;
+  readonly sessionId: SessionId;
+  readonly dimension: LimitDimension;
+}
+
+/**
+ * The day's session budget is spent (FR-083): written **once per tick** — it
+ * ends the drain, so a 15-minute tick pages nobody (FR-093). The hit's input
+ * is not consumed.
+ */
+export interface BudgetExhausted {
+  readonly name: "BudgetExhausted";
+  readonly at: Date;
+  /** The UTC calendar day the budget counts, e.g. `2026-11-03`. */
+  readonly day: string;
+  readonly started: number;
+  readonly cap: number;
+}
+
+/** The drain reached the per-drain cap (FR-082): remaining input stays due. */
+export interface DrainBounded {
+  readonly name: "DrainBounded";
+  readonly at: Date;
+  readonly cap: number;
+}
+
+export function budgetDetail(event: BudgetExhausted): string {
+  return `started today ${event.started} of ${event.cap}`;
+}
+
+export function drainDetail(event: DrainBounded): string {
+  return `ran ${event.cap} sessions this drain`;
 }
 
 /** Orphan cleanup at start (FR-025): the previous generation died mid-session. */
@@ -148,8 +235,12 @@ export type Event =
   | TickSkipped
   | HeartbeatRecorded
   | SessionStarted
+  | SessionLaunched
   | SessionFinished
-  | SessionAborted;
+  | SessionLimited
+  | SessionAborted
+  | BudgetExhausted
+  | DrainBounded;
 
 /** Event identity on disk: schema v1 has no `type`, only `kind` + `outcome`. */
 export interface LineIdentity {
@@ -171,7 +262,11 @@ const IDENTITIES = {
   TickSkipped: { kind: "tick", outcome: "skipped" },
   HeartbeatRecorded: { kind: "project", outcome: "heartbeat" },
   SessionStarted: { kind: "session", outcome: "started" },
+  SessionLaunched: { kind: "session", outcome: "launched" },
+  SessionLimited: { kind: "session", outcome: "limit" },
   SessionAborted: { kind: "session", outcome: "aborted" },
+  BudgetExhausted: { kind: "limit", outcome: "sessions-per-day" },
+  DrainBounded: { kind: "limit", outcome: "sessions-per-drain" },
 } as const satisfies Record<Exclude<Event["name"], "SessionFinished">, LineIdentity>;
 
 export function identityOf(event: Event): LineIdentity {
@@ -193,9 +288,14 @@ export function levelOf(event: Event): Level {
     case "AutomationsNeverValid":
       return "error";
     case "SessionAborted":
+    case "SessionLimited":
+    case "BudgetExhausted":
       return "warn";
     case "SessionFinished":
-      return event.outcome === "failed" ? "warn" : "info";
+      // The level derives from the cause class, never the text (FR-093):
+      // `spawn` = the automation's command itself is broken, a human must act.
+      if (event.outcome !== "failed") return "info";
+      return event.cause === "spawn" ? "error" : "warn";
     default:
       return "info";
   }

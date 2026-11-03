@@ -2,7 +2,16 @@ import { type FileHandle, mkdir, open, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { EventLog } from "~/Automations/Application/AutomationsPorts.ts";
 import { EventLogUnwritable } from "~/Automations/Application/EventLogUnwritable.ts";
-import { type Event, identityOf, levelOf, type SessionLimits } from "~/Automations/Domain/Event.ts";
+import {
+  budgetDetail,
+  drainDetail,
+  type Event,
+  type FailureCause,
+  identityOf,
+  levelOf,
+  type ProcessUnit,
+  type SessionLimits,
+} from "~/Automations/Domain/Event.ts";
 import {
   automationName,
   commitId,
@@ -10,6 +19,7 @@ import {
   sessionId,
   subjectId,
 } from "~/Automations/Domain/Ids.ts";
+import { isReported, type ReportedUsage, reportedUsage } from "~/Automations/Domain/Usage.ts";
 
 /**
  * The event log on disk: one schema v1 line per event — the contract the
@@ -113,10 +123,22 @@ function identifiers(event: Event): Record<string, unknown> {
     case "TickSkipped":
       return { detail: event.reason };
     case "SessionStarted":
-    case "SessionFinished":
+    case "SessionLaunched":
       return { automation: event.automation, issue: event.subject };
+    case "SessionFinished":
+      return {
+        automation: event.automation,
+        issue: event.subject,
+        ...(event.detail === undefined ? {} : { detail: event.detail }),
+      };
+    case "SessionLimited":
+      return { automation: event.automation, issue: event.subject, detail: event.dimension };
     case "SessionAborted":
       return { automation: event.automation, issue: event.subject, detail: "orphaned" };
+    case "BudgetExhausted":
+      return { detail: budgetDetail(event) };
+    case "DrainBounded":
+      return { detail: drainDetail(event) };
     default:
       return {};
   }
@@ -136,9 +158,23 @@ function extras(event: Event): Record<string, unknown> {
       return { trigger: event.trigger };
     case "SessionStarted":
       return { sessionId: event.sessionId, revision: event.revision };
+    case "SessionLaunched":
+      return { sessionId: event.sessionId, unit: event.unit };
     case "SessionFinished":
+      return {
+        sessionId: event.sessionId,
+        ...(event.cause === undefined ? {} : { cause: event.cause }),
+        // Usage flattened into the line (data-model) — omitted where unknown.
+        ...(event.usage === undefined ? {} : reportedUsage(event.usage)),
+      };
+    case "SessionLimited":
+      return { sessionId: event.sessionId, dimension: event.dimension };
     case "SessionAborted":
       return { sessionId: event.sessionId };
+    case "BudgetExhausted":
+      return { day: event.day, started: event.started, cap: event.cap };
+    case "DrainBounded":
+      return { cap: event.cap };
     default:
       return {};
   }
@@ -202,8 +238,20 @@ function toEvent(fields: Record<string, unknown>): Event | undefined {
         revision: revision(text(fields.revision)),
         sessionId: sessionId(text(fields.sessionId)),
       };
+    case "session/launched":
+      return {
+        name: "SessionLaunched",
+        at,
+        automation: automationName(text(fields.automation)),
+        subject: subjectId(text(fields.issue)),
+        sessionId: sessionId(text(fields.sessionId)),
+        unit: toUnit(fields.unit),
+      };
     case "session/succeeded":
-    case "session/failed":
+    case "session/failed": {
+      const cause = toCause(fields.cause);
+      const detail = typeof fields.detail === "string" ? fields.detail : undefined;
+      const usage = toUsage(fields);
       return {
         name: "SessionFinished",
         at,
@@ -211,7 +259,30 @@ function toEvent(fields: Record<string, unknown>): Event | undefined {
         subject: subjectId(text(fields.issue)),
         sessionId: sessionId(text(fields.sessionId)),
         outcome: text(fields.outcome) === "failed" ? "failed" : "succeeded",
+        ...(cause === undefined ? {} : { cause }),
+        ...(detail === undefined ? {} : { detail }),
+        ...(usage === undefined ? {} : { usage }),
       };
+    }
+    case "session/limit":
+      return {
+        name: "SessionLimited",
+        at,
+        automation: automationName(text(fields.automation)),
+        subject: subjectId(text(fields.issue)),
+        sessionId: sessionId(text(fields.sessionId)),
+        dimension: "time",
+      };
+    case "limit/sessions-per-day":
+      return {
+        name: "BudgetExhausted",
+        at,
+        day: text(fields.day),
+        started: number(fields.started),
+        cap: number(fields.cap),
+      };
+    case "limit/sessions-per-drain":
+      return { name: "DrainBounded", at, cap: number(fields.cap) };
     case "session/aborted":
       return {
         name: "SessionAborted",
@@ -227,4 +298,37 @@ function toEvent(fields: Record<string, unknown>): Event | undefined {
 
 function text(field: unknown): string {
   return typeof field === "string" ? field : "";
+}
+
+function number(field: unknown): number {
+  return typeof field === "number" ? field : 0;
+}
+
+function toUnit(field: unknown): ProcessUnit {
+  const raw = (field ?? {}) as Partial<ProcessUnit>;
+  return { group: number(raw.group), startedAt: number(raw.startedAt) };
+}
+
+function toCause(field: unknown): FailureCause | undefined {
+  return field === "spawn" || field === "exit" ? field : undefined;
+}
+
+/** The flattened usage fields of a closing line — `undefined` when none was reported. */
+function toUsage(fields: Record<string, unknown>): ReportedUsage | undefined {
+  const tokens = (fields.tokens ?? {}) as Record<string, unknown>;
+  const usage = reportedUsage({
+    model: typeof fields.model === "string" ? fields.model : undefined,
+    costUsd: typeof fields.costUsd === "number" ? fields.costUsd : undefined,
+    turns: typeof fields.turns === "number" ? fields.turns : undefined,
+    tokens:
+      fields.tokens === undefined
+        ? undefined
+        : {
+            input: typeof tokens.input === "number" ? tokens.input : undefined,
+            output: typeof tokens.output === "number" ? tokens.output : undefined,
+            cacheRead: typeof tokens.cacheRead === "number" ? tokens.cacheRead : undefined,
+            cacheCreated: typeof tokens.cacheCreated === "number" ? tokens.cacheCreated : undefined,
+          },
+  });
+  return isReported(usage) ? usage : undefined;
 }
