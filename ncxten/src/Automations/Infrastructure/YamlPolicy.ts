@@ -13,12 +13,16 @@ import { Policy } from "~/Automations/Domain/Policy.ts";
  */
 /** Pause after this many same-class errors in a row (a later slice uses it). */
 const SAME_ERROR_CLASS_DEFAULT = 3;
+/** The cost ceiling of one tick (002 FR-082, contracts/policy.md). */
+const SESSIONS_PER_DRAIN_DEFAULT = 5;
 
 const SCHEMA = z.strictObject({
   repo: z.strictObject({
     repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/, "must be owner/repo"),
     forge: z.enum(["github"]).default("github"),
-    tracker: z.enum(["github-issues"]).default("github-issues"),
+    // `file` reads findings from the project state dir — the DoD seed source
+    // until 003 brings GitHub (002 quickstart).
+    tracker: z.enum(["github-issues", "file"]).default("github-issues"),
     paths: z.strictObject({
       checkout: z.string().startsWith("/", "must be an absolute path"),
     }),
@@ -41,7 +45,10 @@ const SCHEMA = z.strictObject({
       time: z.string(),
       tokens: z.int().positive().optional(),
       "same-error-class": z.int().positive().default(SAME_ERROR_CLASS_DEFAULT),
-      "sessions-per-day": z.int().positive().optional(),
+      "sessions-per-drain": z.int().positive().default(SESSIONS_PER_DRAIN_DEFAULT),
+      // Required always (002 re-cut, FR-083): the factory cannot know whether
+      // a run: command costs money, so every project carries the cap.
+      "sessions-per-day": z.int().positive(),
       "rounds-per-pr": z.int().positive().optional(),
     }),
     "merge-policy": z
@@ -97,11 +104,14 @@ export class YamlPolicy implements PolicySource {
       return new Policy({
         repository: parsed.data.repo.repository,
         forge: FORGE_HOSTS[parsed.data.repo.forge] ?? parsed.data.repo.forge,
+        tracker: parsed.data.repo.tracker,
         checkout: parsed.data.repo.paths.checkout,
         tick: IsoDuration.parse(parsed.data.policy.tick, "policy.tick"),
         limits: {
           turns: parsed.data.policy.limits.turns,
           time: IsoDuration.parse(parsed.data.policy.limits.time, "policy.limits.time"),
+          sessionsPerDrain: parsed.data.policy.limits["sessions-per-drain"],
+          sessionsPerDay: parsed.data.policy.limits["sessions-per-day"],
         },
       });
     } catch (error) {

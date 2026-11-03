@@ -42,6 +42,7 @@ function validYaml(checkout: string, tick = "PT15M"): string {
     "  limits:",
     "    turns: 50",
     "    time: PT20M",
+    "    sessions-per-day: 1000",
     "",
   ].join("\n");
 }

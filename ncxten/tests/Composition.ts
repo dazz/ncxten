@@ -37,9 +37,15 @@ export function validPolicy(overrides: Partial<PolicyFields> = {}): Policy {
   return new Policy({
     repository: "dazz/foo",
     forge: "github.com",
+    tracker: "github-issues" as const,
     checkout: "/home/dazz/checkouts/foo",
     tick: IsoDuration.parse("PT15M", "policy.tick"),
-    limits: { turns: 50, time: IsoDuration.parse("PT20M", "policy.limits.time") },
+    limits: {
+      turns: 50,
+      time: IsoDuration.parse("PT20M", "policy.limits.time"),
+      sessionsPerDrain: 5,
+      sessionsPerDay: 1000,
+    },
     ...overrides,
   });
 }
@@ -59,8 +65,8 @@ export function validAutomations(commit = "c1"): AutomationsReading {
   return {
     automations: Automations.of(
       [
-        new Automation(automationName("pull-request-reactor"), "react-to-reviews"),
-        new Automation(automationName("board-walker"), "walk-the-board"),
+        new Automation(automationName("pull-request-reactor"), "bash scripts/automations/react.sh"),
+        new Automation(automationName("board-walker"), "bash scripts/automations/implement.sh"),
       ],
       commitId(commit),
     ),

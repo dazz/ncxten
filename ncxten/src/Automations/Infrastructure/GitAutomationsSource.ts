@@ -18,7 +18,7 @@ const SCHEMA = z.strictObject({
     .array(
       z.strictObject({
         name: z.string(),
-        skill: z.string(),
+        run: z.string(),
         gate: z.string().optional(),
       }),
     )
@@ -26,9 +26,12 @@ const SCHEMA = z.strictObject({
 });
 
 /**
- * Reads `automations.yml` + commit from the head of a **local** repo — via
- * the ProcessRunner (`git rev-parse`, `git show`), zero network. The checkout
- * sits on the default branch; changes take effect after merge (FR-010).
+ * Reads `automations.yml` + commit from the **default-branch ref** of a
+ * local repo — via the ProcessRunner (`git symbolic-ref`, `git rev-parse`,
+ * `git show`), zero network. Never HEAD or the working tree (FR-068): since
+ * 002 a session runs *in* the checkout and can switch branches or leave it
+ * dirty — `refs/heads/<default>` moves only on merge (FR-010). A session can
+ * also move local refs; reading from the **remote's** default branch is 003.
  * Returns parsed `Automations` or a problem, each with its commit.
  */
 export class GitAutomationsSource implements AutomationsSource {
@@ -39,12 +42,18 @@ export class GitAutomationsSource implements AutomationsSource {
 
   async read(): Promise<AutomationsReading> {
     const git = (...args: string[]) => Command.of("git", ["-C", this.checkout, ...args]);
-    // A checkout that is no repo is a broken installation, not an invalid
-    // file: outputOf throws and the error surfaces as exit 1.
-    const revParse = git("rev-parse", "HEAD");
+    // A checkout that is no repo, or one whose origin/HEAD was never set
+    // (every clone sets it), is a broken installation, not an invalid file:
+    // outputOf throws and the error surfaces as exit 1.
+    const originHead = git("symbolic-ref", "refs/remotes/origin/HEAD");
+    const target = (await this.runner.run(originHead)).outputOf(originHead);
+    const branch = target.split("/").at(-1) ?? "";
+    const ref = `refs/heads/${branch}`;
+
+    const revParse = git("rev-parse", ref);
     const commit = commitId((await this.runner.run(revParse)).outputOf(revParse));
 
-    const shown = await this.runner.run(git("show", "HEAD:automations.yml"));
+    const shown = await this.runner.run(git("show", `${ref}:automations.yml`));
     if (!shown.ok) {
       return { problem: `automations.yml: ${shown.stderr.trim() || "not in the repo"}`, commit };
     }
@@ -70,7 +79,7 @@ export class GitAutomationsSource implements AutomationsSource {
       return {
         automations: Automations.of(
           parsed.data.automations.map(
-            (entry) => new Automation(automationName(entry.name), entry.skill, entry.gate),
+            (entry) => new Automation(automationName(entry.name), entry.run, entry.gate),
           ),
           commit,
         ),

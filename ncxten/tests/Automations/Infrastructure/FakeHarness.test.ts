@@ -12,7 +12,12 @@ import {
 
 const walker = new Automation(automationName("board-walker"), "walk-the-board");
 const input = new ConsumedInput(walker.name, subjectId("ticket-42"), revision("r3"));
-const limits = { turns: 50, time: IsoDuration.parse("PT20M", "x") };
+const limits = {
+  turns: 50,
+  time: IsoDuration.parse("PT20M", "x"),
+  sessionsPerDrain: 5,
+  sessionsPerDay: 20,
+};
 
 describe("FakeHarness", () => {
   test("plays the script for the automation and records the call with its limits", async () => {
