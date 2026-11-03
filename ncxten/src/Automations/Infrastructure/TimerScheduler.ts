@@ -13,6 +13,12 @@ export class TimerScheduler implements Scheduler {
     return () => clearInterval(timer);
   }
 
+  /** The session deadline (002): one shot, cancelled when the exit wins the race. */
+  once(delay: IsoDuration, fire: () => void): Stop {
+    const timer = setTimeout(() => fire(), delay.milliseconds);
+    return () => clearTimeout(timer);
+  }
+
   sleep(milliseconds: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }

@@ -46,3 +46,34 @@ describe("TimerScheduler", () => {
     expect(Date.now() - before).toBeGreaterThanOrEqual(25);
   });
 });
+
+describe("the one-shot deadline (002)", () => {
+  function sleepMs(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  }
+
+  test("once fires once after its delay — a due date, not an interval", async () => {
+    const scheduler = new TimerScheduler();
+    let fired = 0;
+
+    scheduler.once(IsoDuration.parse("PT0.03S", "test deadline"), () => {
+      fired += 1;
+    });
+    await sleepMs(100);
+
+    expect(fired).toBe(1);
+  });
+
+  test("a cancelled deadline never fires — the exit won the race", async () => {
+    const scheduler = new TimerScheduler();
+    let fired = 0;
+
+    const cancel = scheduler.once(IsoDuration.parse("PT0.03S", "test deadline"), () => {
+      fired += 1;
+    });
+    cancel();
+    await sleepMs(60);
+
+    expect(fired).toBe(0);
+  });
+});

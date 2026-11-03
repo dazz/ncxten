@@ -60,3 +60,29 @@ describe("the ports and their in-memory adapters", () => {
     expect(typeof harness.run).toBe("function");
   });
 });
+
+describe("the 002 ports and their fakes", () => {
+  test("the fakes satisfy ProcessGroups, RunResult and the one-shot Scheduler", async () => {
+    // The assignments are the compile-time assertion.
+    const { FakeProcessRunner } = await import("../../Fakes/FakeProcessRunner.ts");
+    const { FakeRunResult, FakeScheduler } = await import("../../Composition.ts");
+    const { FsRunResult } = await import("~/Automations/Infrastructure/FsRunResult.ts");
+    const { BunProcessRunner } = await import("~/Process/BunProcessRunner.ts");
+    const { TimerScheduler } = await import("~/Automations/Infrastructure/TimerScheduler.ts");
+    const groups: import("~/Automations/Application/AutomationsPorts.ts").ProcessGroups =
+      new FakeProcessRunner();
+    const realGroups: import("~/Automations/Application/AutomationsPorts.ts").ProcessGroups =
+      new BunProcessRunner();
+    const result: import("~/Automations/Application/AutomationsPorts.ts").RunResult =
+      new FakeRunResult();
+    const realResult: import("~/Automations/Application/AutomationsPorts.ts").RunResult =
+      new FsRunResult();
+    const scheduler: import("~/Automations/Application/AutomationsPorts.ts").Scheduler =
+      new FakeScheduler();
+    const realScheduler: import("~/Automations/Application/AutomationsPorts.ts").Scheduler =
+      new TimerScheduler();
+
+    expect([groups, realGroups, result, realResult, scheduler, realScheduler]).toHaveLength(6);
+    expect(await result.read("/nowhere")).toEqual({ kind: "none" });
+  });
+});
