@@ -5,11 +5,11 @@ import { join } from "node:path";
 import type { AutomationsSource } from "~/Automations/Application/AutomationsPorts.ts";
 import { Resume } from "~/Automations/Application/Resume.ts";
 import { RunPass } from "~/Automations/Application/RunPass.ts";
+import { RunSession } from "~/Automations/Application/RunSession.ts";
 import { RunTick } from "~/Automations/Application/RunTick.ts";
 import { freshContext, StartProject } from "~/Automations/Application/StartProject.ts";
 import { Status } from "~/Automations/Application/Status.ts";
 import type { Event, TickTrigger } from "~/Automations/Domain/Event.ts";
-import { FakeHarness, fail, hangUntilAborted } from "~/Automations/Infrastructure/FakeHarness.ts";
 import { FlockInstanceLock } from "~/Automations/Infrastructure/FlockInstanceLock.ts";
 import { GitAutomationsSource } from "~/Automations/Infrastructure/GitAutomationsSource.ts";
 import { InMemoryTracker } from "~/Automations/Infrastructure/InMemoryTracker.ts";
@@ -17,13 +17,14 @@ import { JsonlEventLog } from "~/Automations/Infrastructure/JsonlEventLog.ts";
 import { YamlPolicy } from "~/Automations/Infrastructure/YamlPolicy.ts";
 import { BunProcessRunner } from "~/Process/BunProcessRunner.ts";
 import { ManualClock } from "~/Shared/Clock.ts";
-import { finding, settle } from "../Composition.ts";
+import { FakeRunResult, FakeScheduler, finding, settle } from "../Composition.ts";
+import { FakeProcessRunner } from "../Fakes/FakeProcessRunner.ts";
 import { gitFixtureRepo } from "../Fakes/GitFixtureRepo.ts";
 
 /**
  * The 9 acceptance scenarios through the whole hexagon with the real adapters
  * (quickstart): `JsonlEventLog` in a temp dir, the git fixture repo behind
- * `GitAutomationsSource`, a real `YamlPolicy` file, `FakeHarness`, seeded
+ * `GitAutomationsSource`, a real `YamlPolicy` file, the fake process runner, seeded
  * tracker stub — zero network, zero model cost, directly fired ticks (FR-020).
  * "Restart" = compose again over the same root; "crash" = release the flock,
  * which is what process death does.
@@ -42,6 +43,7 @@ function validYaml(checkout: string, tick = "PT15M"): string {
     "  limits:",
     "    turns: 50",
     "    time: PT20M",
+    "    sessions-per-day: 1000",
     "",
   ].join("\n");
 }
@@ -80,7 +82,7 @@ interface WorldOptions {
   readonly root?: string;
 }
 
-/** The production wiring of `main.ts`, harness scripted and clock manual. */
+/** The production wiring of `main.ts`, the run commands scripted and clock manual. */
 async function world(options: WorldOptions = {}) {
   const root = options.root ?? (await mkdtemp(join(tmpdir(), "ncxten-e2e-")));
   const policyPath = join(root, "config", "dazz", "foo.yaml");
@@ -96,19 +98,31 @@ async function world(options: WorldOptions = {}) {
   const log = new JsonlEventLog(eventsPath, PROJECT, () => context.policy?.forge);
   const policySource = new YamlPolicy(policyPath);
   const lock = new FlockInstanceLock(join(root, "state", "projects", "dazz", "foo", "ncxten.pid"));
-  const runner = new BunProcessRunner();
+  const gitRunner = new BunProcessRunner();
   const automationsSource: AutomationsSource = {
     read: () => {
       const checkout = context.policy?.checkout;
       if (checkout === undefined) throw new Error("no policy in effect");
-      return new GitAutomationsSource(checkout, runner).read();
+      return new GitAutomationsSource(checkout, gitRunner).read();
     },
   };
-  const harness = new FakeHarness();
+  // The run commands and the reaper stay fake here (quickstart: fake runner);
+  // the real-runner leg with tiny real commands lives in session.test.ts.
+  const runner = new FakeProcessRunner();
+  const runResult = new FakeRunResult();
+  const scheduler = new FakeScheduler();
   const tracker = new InMemoryTracker();
-  const runPass = new RunPass({ tracker, harness, log, clock }, context);
+  const runSession = new RunSession({ runner, runResult, log, clock, scheduler }, context, {
+    repository: PROJECT,
+    sessionsDir: join(root, "state", "projects", "dazz", "foo", "sessions"),
+  });
+  const runPass = new RunPass({ tracker, clock }, context, runSession);
   const runTick = new RunTick({ automationsSource, log, clock }, context, runPass);
-  const startProject = new StartProject({ lock, log, policySource, clock }, context);
+  const startProject = new StartProject(
+    { lock, log, policySource, clock, runner },
+    context,
+    PROJECT,
+  );
   const resumeProject = new Resume({ policySource, log, clock }, context);
   const statusQuery = new Status({ log, lock, policySource });
   logs.push(log);
@@ -118,7 +132,9 @@ async function world(options: WorldOptions = {}) {
     root,
     policyPath,
     eventsPath,
-    harness,
+    runner,
+    runResult,
+    scheduler,
     tracker,
     lock,
     log,
@@ -151,7 +167,7 @@ async function untilAppended(log: JsonlEventLog, name: string): Promise<void> {
 }
 
 describe("the factory heartbeat, end to end", () => {
-  test("scenario 1 — an idle tick: no findings, no session, the harness never called", async () => {
+  test("scenario 1 — an idle tick: no findings, no session, no command started", async () => {
     const w = await world();
     await w.start();
 
@@ -163,10 +179,10 @@ describe("the factory heartbeat, end to end", () => {
       "AutomationsLoaded",
       "ProjectIdled",
     ]);
-    expect(w.harness.calls()).toEqual([]);
+    expect(w.runner.invocations()).toEqual([]);
   });
 
-  test("scenario 2 — one finding, one session; the policy limits arrive in the harness; schema v1 on disk", async () => {
+  test("scenario 2 — one finding, one session; the limits arrive in the environment; schema v1 on disk", async () => {
     const w = await world();
     w.tracker.present("board-walker", finding("ticket-42", "r1"));
     await w.start();
@@ -178,12 +194,14 @@ describe("the factory heartbeat, end to end", () => {
       "PolicyLoaded",
       "AutomationsLoaded",
       "SessionStarted",
+      "SessionLaunched",
       "SessionFinished",
       "ProjectIdled",
     ]);
-    const call = w.harness.calls()[0];
-    expect(call?.limits.turns).toBe(50);
-    expect(call?.limits.time.text).toBe("PT20M");
+    const invocation = w.runner.invocations()[0];
+    expect(invocation?.environment.NCXTEN_TURNS).toBe("50");
+    expect(invocation?.environment.NCXTEN_TIME_LIMIT).toBe("PT20M");
+    expect(invocation?.cwd).toBe(fixture.path);
 
     const lines = (await readFile(w.eventsPath, "utf8")).trim().split("\n");
     const started = JSON.parse(lines[3] ?? "{}") as Record<string, unknown>;
@@ -211,8 +229,9 @@ describe("the factory heartbeat, end to end", () => {
       fixture.commits.c1,
     );
     // the c1 automations still ran, and the tick ended normally
-    expect(events.map((event) => event.name).slice(-3)).toEqual([
+    expect(events.map((event) => event.name).slice(-4)).toEqual([
       "SessionStarted",
+      "SessionLaunched",
       "SessionFinished",
       "ProjectIdled",
     ]);
@@ -232,12 +251,12 @@ describe("the factory heartbeat, end to end", () => {
     const events = await replayed(w.log);
     const last = events.at(-1);
     expect(last?.name === "TickSkipped" && last.reason).toBe("paused");
-    expect(w.harness.calls()).toEqual([]);
+    expect(w.runner.invocations()).toEqual([]);
   });
 
   test("scenario 5 — no parallel session; a crash orphans it, the next start aborts and consumes it", async () => {
     const w = await world();
-    w.harness.script("board-walker", hangUntilAborted());
+    w.runner.scriptGroup("board-walker", { kind: "hang" });
     w.tracker.present("board-walker", finding("ticket-42", "r1"));
     await w.start();
     void w.tick(); // hangs in the session
@@ -269,7 +288,9 @@ describe("the factory heartbeat, end to end", () => {
     restarted.tracker.present("board-walker", finding("ticket-42", "r1"));
     await restarted.tick();
     expect((await names(restarted.log)).at(-1)).toBe("ProjectIdled");
-    expect(restarted.harness.calls()).toEqual([]);
+    expect(restarted.runner.invocations()).toEqual([]);
+    // The start-up reap ran, scoped to the own project's mark (FR-070).
+    expect(restarted.runner.markEnds.map((end) => end.mark)).toEqual([PROJECT]);
   });
 
   test("scenario 6 — resume re-validates: failed while the cause persists, resumed after the fix", async () => {
@@ -326,14 +347,15 @@ describe("the factory heartbeat, end to end", () => {
 
     await w.tick();
 
-    expect(w.harness.calls().map((call) => String(call.automation.name))).toEqual([
-      "pull-request-reactor",
-      "board-walker",
-    ]);
-    expect((await names(w.log)).slice(-5)).toEqual([
+    expect(
+      w.runner.invocations().map((invocation) => invocation.environment.NCXTEN_AUTOMATION),
+    ).toEqual(["pull-request-reactor", "board-walker"]);
+    expect((await names(w.log)).slice(-7)).toEqual([
       "SessionStarted",
+      "SessionLaunched",
       "SessionFinished",
       "SessionStarted",
+      "SessionLaunched",
       "SessionFinished",
       "ProjectIdled",
     ]);
@@ -341,7 +363,7 @@ describe("the factory heartbeat, end to end", () => {
 
   test("scenario 9 — a failed session consumes its input: no retry loop (FR-035)", async () => {
     const w = await world();
-    w.harness.script("board-walker", fail());
+    w.runner.scriptGroup("board-walker", { kind: "exit", code: 2 });
     w.tracker.present("board-walker", finding("ticket-42", "r1"));
     await w.start();
 
@@ -351,7 +373,8 @@ describe("the factory heartbeat, end to end", () => {
     const events = await replayed(w.log);
     const finished = events.find((event) => event.name === "SessionFinished");
     expect(finished?.name === "SessionFinished" && finished.outcome).toBe("failed");
-    expect(w.harness.calls()).toHaveLength(1);
+    expect(finished?.name === "SessionFinished" && finished.cause).toBe("exit");
+    expect(w.runner.invocations()).toHaveLength(1);
     expect(events.map((event) => event.name).slice(-2)).toEqual(["ProjectIdled", "ProjectIdled"]);
   });
 

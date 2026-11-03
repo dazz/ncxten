@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { hangUntilAborted } from "~/Automations/Infrastructure/FakeHarness.ts";
 import { SignalControlChannel } from "~/Automations/Infrastructure/SignalControlChannel.ts";
 import { composeTestProject, finding, settle } from "../../Composition.ts";
 
@@ -56,7 +55,7 @@ describe("SignalControlChannel", () => {
     const project = composeTestProject();
     const channel = new SignalControlChannel();
     channel.onTickNow(() => void project.tick("manual"));
-    project.harness.script("board-walker", hangUntilAborted());
+    project.runner.scriptGroup("board-walker", { kind: "hang" });
     project.tracker.present("board-walker", finding("ticket-42", "r1"));
 
     project.tick(); // hangs in the session

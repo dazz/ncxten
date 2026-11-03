@@ -26,8 +26,17 @@ services:
     # `user: "<uid>:<gid>"` instead (README).
     environment:
       HOME: ${HOME}                                     # so the CLI defaults (~/.config, ~/.local/state) hit the mounts below
+      # The factory-owned config home for the shipped claude CLI (FR-065/095): under the
+      # state mount, so the login survives an image rebuild. Seed it once with a
+      # .credentials.json (or `docker exec -it <container> claude /login`); the operator
+      # never accepts a trust dialog there beyond the login (002 contracts/run.md).
+      CLAUDE_CONFIG_DIR: ${HOME}/.local/state/ncxten/claude-config
+      DISABLE_AUTOUPDATER: "1"                          # the image pins the version
     volumes:
       # Mounted at the SAME paths as on the host (STACK Deployment: the daemon resolves
       # bind mounts on the host; the CLI runs via docker exec in the same PID namespace).
+      # The state mount also carries the repo checkouts (repos/<owner>/<repo>/current) and
+      # the claude config home: a policy's repo.paths.checkout MUST resolve inside a
+      # mounted path, or the first session dies at its first git call (002).
       - ${HOME}/.config/ncxten:${HOME}/.config/ncxten             # policies, read-write
-      - ${HOME}/.local/state/ncxten:${HOME}/.local/state/ncxten   # state root: events/ + projects/
+      - ${HOME}/.local/state/ncxten:${HOME}/.local/state/ncxten   # state root: events/ + projects/ + repos/ + claude-config/

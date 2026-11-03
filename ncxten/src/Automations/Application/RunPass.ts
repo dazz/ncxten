@@ -1,33 +1,35 @@
-import type { EventLog, Harness, Tracker } from "~/Automations/Application/AutomationsPorts.ts";
+import type { Tracker } from "~/Automations/Application/AutomationsPorts.ts";
+import type { RunSession } from "~/Automations/Application/RunSession.ts";
 import type { ProjectContext } from "~/Automations/Application/StartProject.ts";
 import type { Automations } from "~/Automations/Domain/Automations.ts";
 import type { Finding } from "~/Automations/Domain/ConsumedInput.ts";
-import type { Event } from "~/Automations/Domain/Event.ts";
-import { type AutomationName, sessionId } from "~/Automations/Domain/Ids.ts";
+import { DailyBudget } from "~/Automations/Domain/DailyBudget.ts";
+import type { AutomationName } from "~/Automations/Domain/Ids.ts";
 import { findHit } from "~/Automations/Domain/Pass.ts";
 import type { Limits } from "~/Automations/Domain/Policy.ts";
-import { Session } from "~/Automations/Domain/Session.ts";
 import type { Clock } from "~/Shared/Clock.ts";
+
+export type PassResult = "session-ran" | "empty-pass" | "budget-exhausted";
 
 /**
  * One pass: gather the findings, let the domain decide (`Pass.findHit`), run
- * at most one session. `SessionStarted` is appended **before** the harness is
- * dispatched (FR-043) — starting is what consumes the input, whatever the
- * outcome (FR-035, scenario 9).
+ * at most one session. The daily budget is checked **before the hit
+ * launches** (FR-083): an exhausted budget starts nothing and consumes
+ * nothing — the input becomes due again when the day rolls over. The session
+ * itself — record, launch, race, closing event — is `RunSession`'s.
  */
 export class RunPass {
   constructor(
     private readonly ports: {
       readonly tracker: Tracker;
-      readonly harness: Harness;
-      readonly log: EventLog;
       readonly clock: Clock;
     },
     private readonly context: ProjectContext,
+    private readonly runSession: RunSession,
   ) {}
 
-  async run(automations: Automations, limits: Limits): Promise<"session-ran" | "empty-pass"> {
-    const { tracker, harness, log, clock } = this.ports;
+  async run(automations: Automations, limits: Limits): Promise<PassResult> {
+    const { tracker, clock } = this.ports;
     const project = this.context.project;
 
     const findings = new Map<AutomationName, readonly Finding[]>();
@@ -39,38 +41,11 @@ export class RunPass {
     );
     if (hit === undefined) return "empty-pass";
 
-    const session = new Session(sessionId(crypto.randomUUID()), hit.automation, hit.input, limits);
-    const started: Event = {
-      name: "SessionStarted",
-      at: clock.now(),
-      automation: session.automation.name,
-      subject: session.input.subject,
-      revision: session.input.revision,
-      sessionId: session.sessionId,
-    };
-    await log.append(started);
-    project.apply(started);
+    // Counted from the replayed starts, the UTC day at read time (FR-044).
+    const budget = new DailyBudget(limits.sessionsPerDay, project.startedToday(clock.now()));
+    if (!budget.allows()) return "budget-exhausted";
 
-    const outcome = await harness.run(session.automation, session.input, session.limits);
-    const ended: Event =
-      outcome === "aborted"
-        ? {
-            name: "SessionAborted",
-            at: clock.now(),
-            automation: session.automation.name,
-            subject: session.input.subject,
-            sessionId: session.sessionId,
-          }
-        : {
-            name: "SessionFinished",
-            at: clock.now(),
-            automation: session.automation.name,
-            subject: session.input.subject,
-            sessionId: session.sessionId,
-            outcome,
-          };
-    await log.append(ended);
-    project.apply(ended);
+    await this.runSession.run(hit, limits);
     return "session-ran";
   }
 }

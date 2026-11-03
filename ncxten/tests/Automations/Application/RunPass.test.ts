@@ -1,45 +1,47 @@
 import { describe, expect, test } from "bun:test";
-import { RunPass } from "~/Automations/Application/RunPass.ts";
 import { automationName, subjectId } from "~/Automations/Domain/Ids.ts";
-import { composeTestProject, finding, validAutomations, validPolicy } from "../../Composition.ts";
+import { IsoDuration } from "~/Automations/Domain/IsoDuration.ts";
+import {
+  BreakableLog,
+  composeTestProject,
+  finding,
+  type TestProjectOptions,
+  validAutomations,
+  validPolicy,
+} from "../../Composition.ts";
 
-function compose() {
-  const project = composeTestProject();
-  const { harness, tracker, log, clock, context } = project;
-  const runPass = new RunPass({ tracker, harness, log, clock }, context);
-  const reading = validAutomations();
+function compose(options: TestProjectOptions = {}) {
+  const project = composeTestProject(options);
+  const reading = options.automations ?? validAutomations();
   if (!("automations" in reading)) throw new Error("fixture");
-  return { ...project, runPass, automations: reading.automations, limits: validPolicy().limits };
+  const policy = options.policy ?? validPolicy();
+  if (!("limits" in policy)) throw new Error("fixture needs a valid policy");
+  return { ...project, automations: reading.automations, limits: policy.limits };
 }
 
 describe("one pass", () => {
-  test("no new input → empty pass, nothing appended, no harness call", async () => {
-    const { runPass, automations, limits, log, harness } = compose();
+  test("no new input → empty pass, nothing appended, no command started", async () => {
+    const { runPass, automations, limits, log, runner } = compose();
 
     expect(await runPass.run(automations, limits)).toBe("empty-pass");
     expect(log.appended()).toEqual([]);
-    expect(harness.calls()).toEqual([]);
+    expect(runner.invocations()).toEqual([]);
   });
 
-  test("FR-043 — SessionStarted is appended before the harness is dispatched", async () => {
-    const { runPass, automations, limits, log, harness, tracker } = compose();
+  test("FR-053/FR-092 — a start that cannot be recorded starts no command", async () => {
+    const broken = new BreakableLog();
+    broken.broken = true;
+    const { runPass, automations, limits, runner, tracker } = compose({ log: broken });
     tracker.present("board-walker", finding("ticket-42", "r1"));
-    let namesWhenDispatched: readonly string[] = [];
-    harness.script("board-walker", () => {
-      namesWhenDispatched = log.names();
-      return Promise.resolve("succeeded");
-    });
 
-    expect(await runPass.run(automations, limits)).toBe("session-ran");
-
-    expect(namesWhenDispatched).toEqual(["SessionStarted"]);
-    expect(log.names()).toEqual(["SessionStarted", "SessionFinished"]);
+    expect(runPass.run(automations, limits)).rejects.toThrow("unwritable");
+    expect(runner.invocations()).toEqual([]);
   });
 
   test("starting consumes the input, whatever the outcome (FR-035)", async () => {
-    const { runPass, automations, limits, context, tracker, harness } = compose();
+    const { runPass, automations, limits, context, tracker, runner } = compose();
     tracker.present("board-walker", finding("ticket-42", "r1"));
-    harness.script("board-walker", () => Promise.resolve("failed"));
+    runner.scriptGroup("board-walker", { kind: "exit", code: 2 });
 
     await runPass.run(automations, limits);
 
@@ -52,13 +54,26 @@ describe("one pass", () => {
     expect(await runPass.run(automations, limits)).toBe("empty-pass");
   });
 
-  test("an aborted outcome ends as SessionAborted, not SessionFinished", async () => {
-    const { runPass, automations, limits, log, tracker, harness } = compose();
+  test("an exhausted day budget starts nothing and consumes nothing (FR-083)", async () => {
+    const policy = validPolicy({
+      limits: {
+        turns: 50,
+        time: IsoDuration.parse("PT20M", "x"),
+        sessionsPerDrain: 5,
+        sessionsPerDay: 1,
+      },
+    });
+    const { runPass, automations, limits, context, tracker, runner } = compose({ policy });
     tracker.present("board-walker", finding("ticket-42", "r1"));
-    harness.script("board-walker", () => Promise.resolve("aborted"));
+    expect(await runPass.run(automations, limits)).toBe("session-ran");
 
-    await runPass.run(automations, limits);
+    tracker.present("board-walker", finding("ticket-7", "r1"));
+    expect(await runPass.run(automations, limits)).toBe("budget-exhausted");
 
-    expect(log.names()).toEqual(["SessionStarted", "SessionAborted"]);
+    // The hit's input was not consumed — due again when the day rolls over.
+    expect(
+      context.project.consumedRevision(automationName("board-walker"), subjectId("ticket-7")),
+    ).toBeUndefined();
+    expect(runner.invocations()).toHaveLength(1);
   });
 });

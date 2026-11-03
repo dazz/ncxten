@@ -2,13 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type {
   AutomationsSource,
   EventLog,
-  Harness,
   InstanceLock,
   PolicySource,
   Tracker,
 } from "~/Automations/Application/AutomationsPorts.ts";
 import { automationName } from "~/Automations/Domain/Ids.ts";
-import { FakeHarness } from "~/Automations/Infrastructure/FakeHarness.ts";
 import { InMemoryEventLog } from "~/Automations/Infrastructure/InMemoryEventLog.ts";
 import { InMemoryTracker } from "~/Automations/Infrastructure/InMemoryTracker.ts";
 import {
@@ -28,7 +26,6 @@ import {
 describe("the ports and their in-memory adapters", () => {
   const log: EventLog = new InMemoryEventLog();
   const tracker: Tracker = new InMemoryTracker();
-  const harness: Harness = new FakeHarness();
   const policySource: PolicySource = new InMemoryPolicySource(validPolicy());
   const automationsSource: AutomationsSource = new InMemoryAutomationsSource(validAutomations());
   const lock: InstanceLock = new FakeInstanceLock();
@@ -55,8 +52,30 @@ describe("the ports and their in-memory adapters", () => {
     expect(lock.isHeld()).toBe(true);
     expect(await lock.acquire()).toBe(false);
   });
+});
 
-  test("Harness: runs a session", () => {
-    expect(typeof harness.run).toBe("function");
+describe("the 002 ports and their fakes", () => {
+  test("the fakes satisfy ProcessGroups, RunResult and the one-shot Scheduler", async () => {
+    // The assignments are the compile-time assertion.
+    const { FakeProcessRunner } = await import("../../Fakes/FakeProcessRunner.ts");
+    const { FakeRunResult, FakeScheduler } = await import("../../Composition.ts");
+    const { FsRunResult } = await import("~/Automations/Infrastructure/FsRunResult.ts");
+    const { BunProcessRunner } = await import("~/Process/BunProcessRunner.ts");
+    const { TimerScheduler } = await import("~/Automations/Infrastructure/TimerScheduler.ts");
+    const groups: import("~/Automations/Application/AutomationsPorts.ts").ProcessGroups =
+      new FakeProcessRunner();
+    const realGroups: import("~/Automations/Application/AutomationsPorts.ts").ProcessGroups =
+      new BunProcessRunner();
+    const result: import("~/Automations/Application/AutomationsPorts.ts").RunResult =
+      new FakeRunResult();
+    const realResult: import("~/Automations/Application/AutomationsPorts.ts").RunResult =
+      new FsRunResult();
+    const scheduler: import("~/Automations/Application/AutomationsPorts.ts").Scheduler =
+      new FakeScheduler();
+    const realScheduler: import("~/Automations/Application/AutomationsPorts.ts").Scheduler =
+      new TimerScheduler();
+
+    expect([groups, realGroups, result, realResult, scheduler, realScheduler]).toHaveLength(6);
+    expect(await result.read("/nowhere")).toEqual({ kind: "none" });
   });
 });

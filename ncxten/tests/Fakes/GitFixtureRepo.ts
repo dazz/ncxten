@@ -6,30 +6,32 @@ import { Command } from "~/Process/ProcessRunner.ts";
 
 const VALID_C1 = `automations:
   - name: pull-request-reactor
-    skill: react-to-reviews
+    run: bash scripts/automations/react.sh
   - name: board-walker
-    skill: walk-the-board
+    run: bash scripts/automations/implement.sh
     gate: make ci
 `;
 
 const INVALID_C2 = `automationz:
   - name: board-walker
-    skill: walk-the-board
+    run: bash scripts/automations/implement.sh
 `;
 
 const VALID_C3 = `automations:
   - name: pull-request-reactor
-    skill: react-to-reviews
+    run: bash scripts/automations/react.sh
   - name: board-walker
-    skill: walk-the-board
+    run: bash scripts/automations/implement.sh
   - name: gardener
-    skill: tend-the-backlog
+    run: bash scripts/automations/tend.sh
 `;
 
 /**
  * The git fixture repo (quickstart): c1 valid → c2 invalid → c3 valid again
  * (healing, FR-013), in a temp dir, zero network. `advanceTo` moves the
- * branch head — what a merge does to the default branch.
+ * default branch — what a merge does. `origin/HEAD` is set as every clone
+ * sets it: the source resolves the default branch from it (FR-068), and the
+ * fixture's `git` is exposed for the switched-HEAD scenario (quickstart 9).
  */
 export async function gitFixtureRepo() {
   const runner = new BunProcessRunner();
@@ -42,6 +44,8 @@ export async function gitFixtureRepo() {
   await git("init", "-q", "-b", "main");
   await git("config", "user.email", "ncxten@test");
   await git("config", "user.name", "ncxten");
+  // What `git clone` leaves behind; the source reads the branch it names.
+  await git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
 
   const commitFile = async (content: string, message: string) => {
     await writeFile(join(path, "automations.yml"), content);
@@ -56,8 +60,15 @@ export async function gitFixtureRepo() {
 
   return {
     path,
+    git,
     commits: { c1, c2, c3 },
-    advanceTo: (commit: string) => git("reset", "-q", "--hard", commit),
+    advanceTo: async (commit: string) => {
+      // Moves refs/heads/main like a merge would — wherever HEAD currently is
+      // (git refuses `branch -f` on the checked-out branch).
+      const head = await git("symbolic-ref", "-q", "HEAD").catch(() => "");
+      if (head === "refs/heads/main") await git("reset", "-q", "--hard", commit);
+      else await git("branch", "-f", "main", commit);
+    },
     remove: () => rm(path, { recursive: true, force: true }),
   };
 }

@@ -1,15 +1,16 @@
 import type { Automation } from "~/Automations/Domain/Automation.ts";
 import type { Automations } from "~/Automations/Domain/Automations.ts";
 import type { ConsumedInput, Finding } from "~/Automations/Domain/ConsumedInput.ts";
-import type { Event, SessionOutcome } from "~/Automations/Domain/Event.ts";
+import type { Event, ProcessUnit } from "~/Automations/Domain/Event.ts";
 import type { AutomationName, CommitId } from "~/Automations/Domain/Ids.ts";
 import type { IsoDuration } from "~/Automations/Domain/IsoDuration.ts";
 import type { Limits, Policy } from "~/Automations/Domain/Policy.ts";
+import type { ReportedUsage } from "~/Automations/Domain/Usage.ts";
 
 /**
- * The eight ports of the Automations module (data-model.md): concepts, no
- * suffix. External systems stay behind them; tests use the in-memory
- * adapters, never mocks. `Clock` is the ninth, shared (`~/Shared/Clock.ts`).
+ * The ports of the Automations module (data-model.md): concepts, no suffix.
+ * External systems stay behind them; tests use the in-memory adapters, never
+ * mocks. `Clock` is the shared one (`~/Shared/Clock.ts`).
  */
 
 export type Stop = () => void;
@@ -17,13 +18,74 @@ export type Stop = () => void;
 /** Fires the tick on its interval; tests fire directly instead (FR-020). */
 export interface Scheduler {
   start(interval: IsoDuration, fire: () => Promise<void>): Stop;
+  /** The session deadline: a due date, not an interval (002). `Stop` cancels it. */
+  once(delay: IsoDuration, fire: () => void): Stop;
   /** One bounded wait — polling loops go through the port, never `setTimeout`. */
   sleep(milliseconds: number): Promise<void>;
 }
 
-/** Runs one session. The `FakeHarness` is a shipped adapter, not a test hack. */
-export interface Harness {
-  run(automation: Automation, input: ConsumedInput, limits: Limits): Promise<SessionOutcome>;
+/**
+ * How long TERM gets before KILL when the factory ends a group — a named
+ * constant, not policy: the limit is policy, the grace is mechanics.
+ */
+export const END_GRACE_MS = 5_000;
+
+/** The `run:` command as one marked process group goes in… (contracts/run.md) */
+export interface GroupInvocation {
+  /** The automation's `run:` string, executed through the system shell. */
+  readonly run: string;
+  /** The repo checkout (FR-060). */
+  readonly cwd: string;
+  /** Added to the factory's own environment — both marks included (FR-061/066). */
+  readonly environment: Readonly<Record<string, string>>;
+  /** stdout+stderr teed here live — kill cases included (FR-062). */
+  readonly outputPath: string;
+}
+
+/** …and the unit (before the exit — launch record and watchdog need it) comes out. */
+export type GroupStart =
+  | {
+      readonly kind: "started";
+      readonly unit: ProcessUnit;
+      readonly exited: Promise<{ readonly code: number }>;
+    }
+  | { readonly kind: "spawn-failure"; readonly reason: string };
+
+/**
+ * Marked process groups (STACK Process model) — the session's endable unit.
+ * The real adapter is `BunProcessRunner`, still the ONE spawning file; the
+ * fake is scriptable and never spawns. The port lives here because the
+ * application may not import an outer layer (ARCHITECTURE.md).
+ */
+export interface ProcessGroups {
+  startGroup(invocation: GroupInvocation): Promise<GroupStart>;
+  /**
+   * TERM the group → KILL after the grace, unconditionally (a leader that
+   * dies on TERM does not spare a TERM-ignoring child) → mark re-scan for
+   * strays. Verifies id + start time before the first signal; refuses the
+   * factory's own group.
+   */
+  endGroup(unit: ProcessUnit, graceMs: number): Promise<void>;
+  /**
+   * End every group carrying the **own project's** mark, repeated until no
+   * marked process remains (FR-070) — the start-up reaper, log-independent;
+   * sibling projects untouched.
+   */
+  endMarked(projectMark: string, graceMs: number): Promise<void>;
+}
+
+export type RunResultReading =
+  | { readonly kind: "reported"; readonly usage: ReportedUsage; readonly detail?: string }
+  | { readonly kind: "none" }
+  | { readonly kind: "unreadable"; readonly problem: string };
+
+/**
+ * The command's optional result file (FR-067): lenient by contract — missing
+ * = none, broken = unreadable, never an error. Self-reported, trusted for
+ * nothing.
+ */
+export interface RunResult {
+  read(path: string): Promise<RunResultReading>;
 }
 
 /** The automation's deterministic precheck answers from here (slice 1). */

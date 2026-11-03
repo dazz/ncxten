@@ -1,20 +1,21 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Command } from "@cliffy/command";
-import type { AutomationsSource } from "~/Automations/Application/AutomationsPorts.ts";
+import type { AutomationsSource, Tracker } from "~/Automations/Application/AutomationsPorts.ts";
 import { RecordHeartbeat } from "~/Automations/Application/RecordHeartbeat.ts";
 import { RequestResume } from "~/Automations/Application/RequestResume.ts";
 import { RequestTick } from "~/Automations/Application/RequestTick.ts";
 import { Resume } from "~/Automations/Application/Resume.ts";
 import { RunPass } from "~/Automations/Application/RunPass.ts";
 import { RunProject } from "~/Automations/Application/RunProject.ts";
+import { RunSession } from "~/Automations/Application/RunSession.ts";
 import { RunTick } from "~/Automations/Application/RunTick.ts";
 import { freshContext, StartProject } from "~/Automations/Application/StartProject.ts";
 import { Status } from "~/Automations/Application/Status.ts";
-import { FakeHarness } from "~/Automations/Infrastructure/FakeHarness.ts";
+import { FileTracker } from "~/Automations/Infrastructure/FileTracker.ts";
 import { FlockInstanceLock } from "~/Automations/Infrastructure/FlockInstanceLock.ts";
+import { FsRunResult } from "~/Automations/Infrastructure/FsRunResult.ts";
 import { GitAutomationsSource } from "~/Automations/Infrastructure/GitAutomationsSource.ts";
-import { InMemoryTracker } from "~/Automations/Infrastructure/InMemoryTracker.ts";
 import { JsonlEventLog } from "~/Automations/Infrastructure/JsonlEventLog.ts";
 import { SignalControlChannel } from "~/Automations/Infrastructure/SignalControlChannel.ts";
 import { TimerScheduler } from "~/Automations/Infrastructure/TimerScheduler.ts";
@@ -46,9 +47,9 @@ export function resolveRoots(options: RootOptions): Roots {
 
 /**
  * The composition root: one project's hexagon from the real adapters. It
- * spawns nothing itself — processes go through the ProcessRunner adapter.
- * The harness is the shipped fake and the tracker an empty stub until
- * 002/003; the loop, the log and the container are real from this slice on.
+ * spawns nothing itself — processes go through the ProcessRunner adapter,
+ * sessions through its marked groups (002). The tracker is the policy's
+ * choice: the findings file, or an empty source until 003 brings GitHub.
  */
 function composeProject(project: string, options: RootOptions): Assembly {
   const roots = resolveRoots(options);
@@ -75,11 +76,25 @@ function composeProject(project: string, options: RootOptions): Assembly {
       return new GitAutomationsSource(checkout, runner).read();
     },
   };
-  const harness = new FakeHarness();
-  const tracker = new InMemoryTracker();
-  const runPass = new RunPass({ tracker, harness, log, clock }, context);
+  const runResult = new FsRunResult();
+  const fileTracker = new FileTracker(join(roots.stateDir, "projects", project, "findings.yaml"));
+  // The policy chooses the tracker (repo.tracker, in effect after PolicyLoaded);
+  // `github-issues` stays an empty source until 003 brings the forge.
+  const tracker: Tracker = {
+    findings: (automation) =>
+      context.policy?.tracker === "file" ? fileTracker.findings(automation) : Promise.resolve([]),
+  };
+  const runSession = new RunSession({ runner, runResult, log, clock, scheduler }, context, {
+    repository: project,
+    sessionsDir: join(roots.stateDir, "projects", project, "sessions"),
+  });
+  const runPass = new RunPass({ tracker, clock }, context, runSession);
   const runTick = new RunTick({ automationsSource, log, clock }, context, runPass);
-  const startProject = new StartProject({ lock, log, policySource, clock }, context);
+  const startProject = new StartProject(
+    { lock, log, policySource, clock, runner },
+    context,
+    project,
+  );
   const resumeProject = new Resume({ policySource, log, clock }, context);
   const statusQuery = new Status({ log, lock, policySource });
   const heartbeat = new RecordHeartbeat({ log, clock }, context);

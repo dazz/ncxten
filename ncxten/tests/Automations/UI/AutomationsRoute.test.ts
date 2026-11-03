@@ -156,6 +156,7 @@ describe("statusFlow", () => {
     lastTick: new Date("2026-10-31T12:00:00.000Z"),
     lastTickSkipped: "paused",
     lastSession: undefined,
+    lastDrainLimit: undefined,
     lastError: "policy.limitz: unknown key",
   };
 

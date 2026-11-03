@@ -6,6 +6,7 @@ import type {
 import type { SkipReason } from "~/Automations/Domain/Event.ts";
 import { Policy } from "~/Automations/Domain/Policy.ts";
 import {
+  type DrainLimit,
   type LastSession,
   type OpenSession,
   Project,
@@ -23,6 +24,8 @@ export interface StatusReport {
   readonly lastTick: Date | undefined;
   readonly lastTickSkipped: SkipReason | undefined;
   readonly lastSession: LastSession | undefined;
+  /** The newest drain-ending bound — a capped project never looks quiet (FR-084). */
+  readonly lastDrainLimit: DrainLimit | undefined;
   readonly lastError: string | undefined;
 }
 
@@ -67,6 +70,7 @@ export class Status {
       lastTick: project.lastTick(),
       lastTickSkipped: project.lastTickSkipped(),
       lastSession: project.lastSession(),
+      lastDrainLimit: project.lastDrainLimit(),
       lastError: project.lastError(),
     };
   }

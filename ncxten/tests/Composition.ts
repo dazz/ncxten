@@ -6,6 +6,8 @@ import type {
   InstanceLock,
   PolicyProblem,
   PolicySource,
+  RunResult,
+  RunResultReading,
   Scheduler,
   Stop,
 } from "~/Automations/Application/AutomationsPorts.ts";
@@ -16,6 +18,7 @@ import { RequestTick } from "~/Automations/Application/RequestTick.ts";
 import { Resume } from "~/Automations/Application/Resume.ts";
 import { RunPass } from "~/Automations/Application/RunPass.ts";
 import { RunProject } from "~/Automations/Application/RunProject.ts";
+import { RunSession } from "~/Automations/Application/RunSession.ts";
 import { RunTick } from "~/Automations/Application/RunTick.ts";
 import { freshContext, StartProject } from "~/Automations/Application/StartProject.ts";
 import { Status } from "~/Automations/Application/Status.ts";
@@ -26,10 +29,10 @@ import type { Event, TickTrigger } from "~/Automations/Domain/Event.ts";
 import { automationName, commitId, revision, subjectId } from "~/Automations/Domain/Ids.ts";
 import { IsoDuration } from "~/Automations/Domain/IsoDuration.ts";
 import { Policy, type PolicyFields } from "~/Automations/Domain/Policy.ts";
-import { FakeHarness } from "~/Automations/Infrastructure/FakeHarness.ts";
 import { InMemoryEventLog } from "~/Automations/Infrastructure/InMemoryEventLog.ts";
 import { InMemoryTracker } from "~/Automations/Infrastructure/InMemoryTracker.ts";
 import { ManualClock } from "~/Shared/Clock.ts";
+import { FakeProcessRunner } from "./Fakes/FakeProcessRunner.ts";
 
 /** Builders with sensible defaults — override per test (quickstart). */
 
@@ -37,9 +40,15 @@ export function validPolicy(overrides: Partial<PolicyFields> = {}): Policy {
   return new Policy({
     repository: "dazz/foo",
     forge: "github.com",
+    tracker: "github-issues" as const,
     checkout: "/home/dazz/checkouts/foo",
     tick: IsoDuration.parse("PT15M", "policy.tick"),
-    limits: { turns: 50, time: IsoDuration.parse("PT20M", "policy.limits.time") },
+    limits: {
+      turns: 50,
+      time: IsoDuration.parse("PT20M", "policy.limits.time"),
+      sessionsPerDrain: 5,
+      sessionsPerDay: 1000,
+    },
     ...overrides,
   });
 }
@@ -59,8 +68,8 @@ export function validAutomations(commit = "c1"): AutomationsReading {
   return {
     automations: Automations.of(
       [
-        new Automation(automationName("pull-request-reactor"), "react-to-reviews"),
-        new Automation(automationName("board-walker"), "walk-the-board"),
+        new Automation(automationName("pull-request-reactor"), "bash scripts/automations/react.sh"),
+        new Automation(automationName("board-walker"), "bash scripts/automations/implement.sh"),
       ],
       commitId(commit),
     ),
@@ -140,6 +149,13 @@ export class FakeInstanceLock implements InstanceLock {
 
 export class FakeScheduler implements Scheduler {
   readonly jobs: Array<{ interval: IsoDuration; fire: () => Promise<void>; stopped: boolean }> = [];
+  /** Armed one-shots — the session deadlines (002). */
+  readonly deadlines: Array<{
+    delay: IsoDuration;
+    fire: () => void;
+    cancelled: boolean;
+    fired: boolean;
+  }> = [];
 
   start(interval: IsoDuration, fire: () => Promise<void>): Stop {
     const job = { interval, fire, stopped: false };
@@ -147,6 +163,24 @@ export class FakeScheduler implements Scheduler {
     return () => {
       job.stopped = true;
     };
+  }
+
+  once(delay: IsoDuration, fire: () => void): Stop {
+    const deadline = { delay, fire, cancelled: false, fired: false };
+    this.deadlines.push(deadline);
+    return () => {
+      deadline.cancelled = true;
+    };
+  }
+
+  /** Time passes: every armed one-shot due within `duration` fires (quickstart). */
+  elapse(duration: IsoDuration): void {
+    for (const deadline of this.deadlines) {
+      if (deadline.cancelled || deadline.fired) continue;
+      if (deadline.delay.milliseconds > duration.milliseconds) continue;
+      deadline.fired = true;
+      deadline.fire();
+    }
   }
 
   /** Immediate: a polling loop runs its tries without wall-clock time. */
@@ -182,6 +216,22 @@ export class FakeControl implements ControlChannel {
   }
 }
 
+/** The scriptable result file (FR-067): none by default — an offer, not an obligation. */
+export class FakeRunResult implements RunResult {
+  private reading: RunResultReading = { kind: "none" };
+  /** Every path the factory asked for — the contract hands it via NCXTEN_RESULT. */
+  readonly reads: string[] = [];
+
+  set(reading: RunResultReading): void {
+    this.reading = reading;
+  }
+
+  read(path: string): Promise<RunResultReading> {
+    this.reads.push(path);
+    return Promise.resolve(this.reading);
+  }
+}
+
 /** The full-disk fixture: appends fail on demand (FR-053). */
 export class BreakableLog extends InMemoryEventLog {
   broken = false;
@@ -200,6 +250,8 @@ export interface TestProjectOptions {
   /** Share a log to "restart": re-compose over the same log (quickstart). */
   readonly log?: InMemoryEventLog;
   readonly clock?: ManualClock;
+  /** Share a runner to "restart": its marked processes survive the crash (quickstart 8). */
+  readonly runner?: FakeProcessRunner;
 }
 
 /** One fixture assembles the system; no per-test hand-wiring (quickstart). */
@@ -207,7 +259,8 @@ export function composeTestProject(options: TestProjectOptions = {}) {
   const policy = options.policy ?? validPolicy();
   const log = options.log ?? new InMemoryEventLog();
   const clock = options.clock ?? new ManualClock(new Date("2026-10-31T12:00:00.000Z"));
-  const harness = new FakeHarness();
+  const runner = options.runner ?? new FakeProcessRunner();
+  const runResult = new FakeRunResult();
   const tracker = new InMemoryTracker();
   const policySource = new InMemoryPolicySource(policy);
   const automationsSource = new InMemoryAutomationsSource(
@@ -223,9 +276,19 @@ export function composeTestProject(options: TestProjectOptions = {}) {
   const scheduler = new FakeScheduler();
   const control = new FakeControl();
 
-  const runPass = new RunPass({ tracker, harness, log, clock }, context);
+  const repository = policy instanceof Policy ? policy.repository : "dazz/foo";
+  const runSession = new RunSession({ runner, runResult, log, clock, scheduler }, context, {
+    repository,
+    // Never written: the fake runner records the paths instead of using them.
+    sessionsDir: `/fake/state/projects/${repository}/sessions`,
+  });
+  const runPass = new RunPass({ tracker, clock }, context, runSession);
   const runTick = new RunTick({ automationsSource, log, clock }, context, runPass);
-  const startProject = new StartProject({ lock, log, policySource, clock }, context);
+  const startProject = new StartProject(
+    { lock, log, policySource, clock, runner },
+    context,
+    repository,
+  );
   const resumeProject = new Resume({ policySource, log, clock }, context);
   const statusQuery = new Status({ log, lock, policySource });
   const heartbeat = new RecordHeartbeat({ log, clock }, context);
@@ -243,7 +306,10 @@ export function composeTestProject(options: TestProjectOptions = {}) {
 
   return {
     context,
-    harness,
+    runner,
+    runResult,
+    runSession,
+    runPass,
     tracker,
     log,
     clock,

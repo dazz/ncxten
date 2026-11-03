@@ -75,6 +75,68 @@ const EVERY_SHAPE: readonly Event[] = [
     outcome: "failed",
   },
   { name: "SessionAborted", at, automation: walker, subject: ticket, sessionId: sessionId("s1") },
+  // The 002 shapes: launch, cause classes, usage, limit, budgets (data-model delta).
+  {
+    name: "SessionLaunched",
+    at,
+    automation: walker,
+    subject: ticket,
+    sessionId: sessionId("s2"),
+    unit: { group: 4242, startedAt: 123456789 },
+  },
+  {
+    name: "SessionFinished",
+    at,
+    automation: walker,
+    subject: ticket,
+    sessionId: sessionId("s2"),
+    outcome: "succeeded",
+    detail: "result file unreadable: not JSON",
+  },
+  {
+    name: "SessionFinished",
+    at,
+    automation: walker,
+    subject: ticket,
+    sessionId: sessionId("s3"),
+    outcome: "succeeded",
+    usage: {
+      model: "claude-haiku-5-5",
+      costUsd: 0.12,
+      turns: 7,
+      tokens: { input: 1200, output: 400, cacheRead: 90000, cacheCreated: 0 },
+    },
+  },
+  {
+    name: "SessionFinished",
+    at,
+    automation: walker,
+    subject: ticket,
+    sessionId: sessionId("s4"),
+    outcome: "failed",
+    cause: "exit",
+    detail: "exit 2",
+  },
+  {
+    name: "SessionFinished",
+    at,
+    automation: walker,
+    subject: ticket,
+    sessionId: sessionId("s5"),
+    outcome: "failed",
+    cause: "spawn",
+    detail: "spawn failed: no such cwd",
+  },
+  {
+    name: "SessionLimited",
+    at,
+    automation: walker,
+    subject: ticket,
+    sessionId: sessionId("s6"),
+    dimension: "time",
+  },
+  { name: "BudgetExhausted", at, day: "2026-10-31", started: 3, cap: 3 },
+  { name: "DrainBounded", at, cap: 5 },
 ];
 
 describe("JsonlEventLog", () => {
@@ -146,24 +208,57 @@ describe("JsonlEventLog", () => {
     const log = new JsonlEventLog(GOLDEN, "dazz/foo", () => undefined);
     const events = await replayAll(log);
 
-    // 23 known lines fold; the future `cost/recorded` line is skipped, not fatal.
-    expect(events).toHaveLength(23);
+    // 34 known lines fold; the future `cost/recorded` line is skipped, not fatal.
+    // Existing lines stay byte-identical — 002 only appended (append-only tripwire).
+    expect(events).toHaveLength(34);
     const project = Project.replay(events);
     expect(project.state()).toBe("idle");
     expect(project.pauseReason()).toBeUndefined();
     expect(project.lastError()).toBe("policy.tick: P15M is above the maximum PT24H");
     expect(project.openSession()).toBeUndefined();
     expect(project.lastValidAutomationsCommit()).toBe(commitId("c1"));
-    expect(project.consumedRevision(walker, ticket)).toBe(revision("r9"));
+    expect(project.consumedRevision(walker, ticket)).toBe(revision("r11"));
     expect(
       project.consumedRevision(automationName("pull-request-reactor"), subjectId("pr-7")),
-    ).toBe(revision("r5"));
-    expect(project.lastTick()?.toISOString()).toBe("2026-10-31T12:00:19.000Z");
-    expect(project.lastTickSkipped()).toBe("paused");
+    ).toBe(revision("r6"));
+    expect(project.lastTick()?.toISOString()).toBe("2026-10-31T12:00:35.000Z");
+    expect(project.lastTickSkipped()).toBeUndefined();
     expect(project.lastSession()).toEqual({
       automation: walker,
-      outcome: "aborted",
-      at: new Date("2026-10-31T12:00:17.000Z"),
+      outcome: "succeeded",
+      at: new Date("2026-10-31T12:00:33.000Z"),
     });
+    // The 002 fold: day budget from replayed starts, the newest drain bound.
+    expect(project.startedToday(new Date("2026-10-31T23:00:00.000Z"))).toBe(6);
+    expect(project.lastDrainLimit()).toEqual({
+      bound: "sessions-per-drain",
+      detail: "ran 5 sessions this drain",
+      at: new Date("2026-10-31T12:00:34.000Z"),
+    });
+  });
+
+  test("a closing line carries the usage and the cause as the catalog says", async () => {
+    const log = new JsonlEventLog(GOLDEN, "dazz/foo", () => undefined);
+    const events = await replayAll(log);
+
+    const succeeded = events.find(
+      (e) => e.name === "SessionFinished" && e.sessionId === sessionId("s6"),
+    );
+    expect(succeeded).toMatchObject({
+      outcome: "succeeded",
+      detail: "gate green",
+      usage: {
+        model: "claude-haiku-5-5",
+        costUsd: 0.12,
+        turns: 7,
+        tokens: { input: 1200, output: 400, cacheRead: 90000, cacheCreated: 0 },
+      },
+    });
+    const spawned = events.find(
+      (e) => e.name === "SessionFinished" && e.sessionId === sessionId("s5"),
+    );
+    expect(spawned).toMatchObject({ outcome: "failed", cause: "spawn" });
+    const launched = events.find((e) => e.name === "SessionLaunched");
+    expect(launched).toMatchObject({ unit: { group: 4242, startedAt: 123456789 } });
   });
 });

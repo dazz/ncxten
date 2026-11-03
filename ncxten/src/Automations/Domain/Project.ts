@@ -1,4 +1,11 @@
-import type { Event, SessionOutcome, SkipReason } from "~/Automations/Domain/Event.ts";
+import {
+  budgetDetail,
+  drainDetail,
+  type Event,
+  type ProcessUnit,
+  type SessionOutcome,
+  type SkipReason,
+} from "~/Automations/Domain/Event.ts";
 import type {
   AutomationName,
   CommitId,
@@ -14,12 +21,25 @@ export interface OpenSession {
   readonly automation: AutomationName;
   readonly subject: SubjectId;
   readonly revision: Revision;
+  /** The recorded process unit — set at launch, where the launch was reached. */
+  readonly unit?: ProcessUnit;
 }
 
 /** What `ncxten status` says about the newest finished or aborted session. */
 export interface LastSession {
   readonly automation: AutomationName;
   readonly outcome: SessionOutcome;
+  readonly at: Date;
+}
+
+/**
+ * The newest drain-ending bound (FR-084): shown by `ncxten status` beside the
+ * last session — a capped project must never look like a quiet one. Superseded
+ * by newer limit events, never cleared.
+ */
+export interface DrainLimit {
+  readonly bound: "sessions-per-day" | "sessions-per-drain";
+  readonly detail: string;
   readonly at: Date;
 }
 
@@ -39,6 +59,9 @@ export class Project {
   private lastSessionValue: LastSession | undefined;
   private lastErrorValue: string | undefined;
   private lastErrorFromAutomations = false;
+  /** Sessions started per UTC day — derived at apply time, read per day (FR-044). */
+  private readonly startedByDay = new Map<string, number>();
+  private lastDrainLimitValue: DrainLimit | undefined;
 
   static replay(events: Iterable<Event>): Project {
     const project = new Project();
@@ -94,6 +117,33 @@ export class Project {
         };
         // Starting consumes the input, whatever the outcome (FR-035, FR-043).
         this.consumed.set(consumedKey(event.automation, event.subject), event.revision);
+        // Started counts toward the UTC day's budget (FR-083) — launch attempts.
+        this.startedByDay.set(utcDay(event.at), (this.startedByDay.get(utcDay(event.at)) ?? 0) + 1);
+        return;
+      case "SessionLaunched":
+        // The open session gains its unit — the reap's audit identity (FR-066).
+        if (this.openSessionValue?.sessionId === event.sessionId) {
+          this.openSessionValue = { ...this.openSessionValue, unit: event.unit };
+        }
+        return;
+      case "SessionLimited":
+        this.currentState = "idle";
+        this.openSessionValue = undefined;
+        this.lastSessionValue = { automation: event.automation, outcome: "limit", at: event.at };
+        return;
+      case "BudgetExhausted":
+        this.lastDrainLimitValue = {
+          bound: "sessions-per-day",
+          detail: budgetDetail(event),
+          at: event.at,
+        };
+        return;
+      case "DrainBounded":
+        this.lastDrainLimitValue = {
+          bound: "sessions-per-drain",
+          detail: drainDetail(event),
+          at: event.at,
+        };
         return;
       case "SessionFinished":
         // Back to idle: `running` means an open session, and only that. The
@@ -155,6 +205,19 @@ export class Project {
     return this.lastSessionValue;
   }
 
+  /**
+   * Sessions started in `now`'s UTC calendar day (FR-083) — counted from the
+   * replayed starts, the day boundary computed at read time; nothing stored
+   * beyond the fold (FR-044).
+   */
+  startedToday(now: Date): number {
+    return this.startedByDay.get(utcDay(now)) ?? 0;
+  }
+
+  lastDrainLimit(): DrainLimit | undefined {
+    return this.lastDrainLimitValue;
+  }
+
   lastError(): string | undefined {
     return this.lastErrorValue;
   }
@@ -168,4 +231,9 @@ export class Project {
 function consumedKey(automation: string, subject: string): string {
   // U+001F (unit separator) cannot appear in either part — no two pairs collide.
   return `${automation}\u001F${subject}`;
+}
+
+/** The UTC calendar day, `YYYY-MM-DD` (decision 2026-11-02). */
+export function utcDay(at: Date): string {
+  return at.toISOString().slice(0, "YYYY-MM-DD".length);
 }

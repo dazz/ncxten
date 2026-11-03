@@ -6,9 +6,15 @@ function fields(overrides: Partial<ConstructorParameters<typeof Policy>[0]> = {}
   return {
     repository: "dazz/foo",
     forge: "github.com",
+    tracker: "github-issues" as const,
     checkout: "/home/dazz/checkouts/foo",
     tick: IsoDuration.parse("PT15M", "policy.tick"),
-    limits: { turns: 50, time: IsoDuration.parse("PT20M", "policy.limits.time") },
+    limits: {
+      turns: 50,
+      time: IsoDuration.parse("PT20M", "policy.limits.time"),
+      sessionsPerDrain: 5,
+      sessionsPerDay: 20,
+    },
     ...overrides,
   };
 }
@@ -53,10 +59,48 @@ describe("Policy", () => {
     const time = IsoDuration.parse("PT20M", "x");
     const zero = IsoDuration.parse("PT0S", "x");
 
-    expect(() => new Policy(fields({ limits: { turns: 0, time } }))).toThrow("positive integer");
-    expect(() => new Policy(fields({ limits: { turns: 2.5, time } }))).toThrow("positive integer");
-    expect(() => new Policy(fields({ limits: { turns: 50, time: zero } }))).toThrow(
-      "positive duration",
-    );
+    expect(
+      () =>
+        new Policy(fields({ limits: { turns: 0, time, sessionsPerDrain: 5, sessionsPerDay: 20 } })),
+    ).toThrow("positive integer");
+    expect(
+      () =>
+        new Policy(
+          fields({ limits: { turns: 2.5, time, sessionsPerDrain: 5, sessionsPerDay: 20 } }),
+        ),
+    ).toThrow("positive integer");
+    expect(
+      () =>
+        new Policy(
+          fields({ limits: { turns: 50, time: zero, sessionsPerDrain: 5, sessionsPerDay: 20 } }),
+        ),
+    ).toThrow("positive duration");
+  });
+});
+
+describe("the 002 limits", () => {
+  const time = IsoDuration.parse("PT20M", "x");
+
+  test("carries tracker and the session counts", () => {
+    const policy = new Policy(fields());
+
+    expect(policy.tracker).toBe("github-issues");
+    expect(policy.limits.sessionsPerDrain).toBe(5);
+    expect(policy.limits.sessionsPerDay).toBe(20);
+  });
+
+  test("the session counts must be positive integers", () => {
+    expect(
+      () =>
+        new Policy(
+          fields({ limits: { turns: 50, time, sessionsPerDrain: 0, sessionsPerDay: 20 } }),
+        ),
+    ).toThrow("policy.limits.sessions-per-drain");
+    expect(
+      () =>
+        new Policy(
+          fields({ limits: { turns: 50, time, sessionsPerDrain: 5, sessionsPerDay: 1.5 } }),
+        ),
+    ).toThrow("policy.limits.sessions-per-day");
   });
 });

@@ -158,6 +158,12 @@ export async function statusFlow(a: Assembly, project: string, print: Print): Pr
       ? "none yet"
       : `${result.lastSession.automation} → ${result.lastSession.outcome} (${result.lastSession.at.toISOString()})`,
   );
+  if (result.lastDrainLimit !== undefined) {
+    line(
+      "last limit",
+      `${result.lastDrainLimit.bound} — ${result.lastDrainLimit.detail} (${result.lastDrainLimit.at.toISOString()})`,
+    );
+  }
   if (result.lastError !== undefined) line("last error", result.lastError);
   return EXIT_OK;
 }

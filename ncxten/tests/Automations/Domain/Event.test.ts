@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { type Event, identityOf, levelOf } from "~/Automations/Domain/Event.ts";
+import {
+  budgetDetail,
+  drainDetail,
+  type Event,
+  identityOf,
+  levelOf,
+} from "~/Automations/Domain/Event.ts";
 import {
   automationName,
   commitId,
@@ -99,6 +105,39 @@ const CATALOG: ReadonlyArray<[Event, string, string, string]> = [
     "aborted",
     "warn",
   ],
+  [
+    {
+      name: "SessionLaunched",
+      at,
+      automation: walker,
+      subject: ticket,
+      sessionId: s1,
+      unit: { group: 4242, startedAt: 123456789 },
+    },
+    "session",
+    "launched",
+    "info",
+  ],
+  [
+    {
+      name: "SessionLimited",
+      at,
+      automation: walker,
+      subject: ticket,
+      sessionId: s1,
+      dimension: "time",
+    },
+    "session",
+    "limit",
+    "warn",
+  ],
+  [
+    { name: "BudgetExhausted", at, day: "2026-10-31", started: 3, cap: 3 },
+    "limit",
+    "sessions-per-day",
+    "warn",
+  ],
+  [{ name: "DrainBounded", at, cap: 5 }, "limit", "sessions-per-drain", "info"],
 ];
 
 describe("the event catalog (schema v1 mapping)", () => {
@@ -115,5 +154,31 @@ describe("the event catalog (schema v1 mapping)", () => {
     const identities = CATALOG.map(([, kind, outcome]) => `${kind}/${outcome}`);
 
     expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  test("the level derives from the cause class, never the text (FR-093)", () => {
+    const failed = (cause: "spawn" | "exit", detail: string): Event => ({
+      name: "SessionFinished",
+      at,
+      automation: walker,
+      subject: ticket,
+      sessionId: s1,
+      outcome: "failed",
+      cause,
+      detail,
+    });
+
+    // spawn = the automation's command itself is broken — a human must act.
+    expect(levelOf(failed("spawn", "sh: not found"))).toBe("error");
+    // exit = the work failed; the reason is in the output file, not the level.
+    expect(levelOf(failed("exit", "exit 2"))).toBe("warn");
+    expect(levelOf(failed("exit", "Not logged in"))).toBe("warn");
+  });
+
+  test("budget and drain details are the fixed phrases status and the log share", () => {
+    expect(
+      budgetDetail({ name: "BudgetExhausted", at, day: "2026-10-31", started: 3, cap: 3 }),
+    ).toBe("started today 3 of 3");
+    expect(drainDetail({ name: "DrainBounded", at, cap: 5 })).toBe("ran 5 sessions this drain");
   });
 });

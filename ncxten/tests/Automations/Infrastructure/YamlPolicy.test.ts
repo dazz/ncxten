@@ -13,6 +13,7 @@ policy:
   limits:
     turns: 50
     time: PT20M
+    sessions-per-day: 20
 `;
 
 const COMPLETE = `repo:
@@ -124,5 +125,34 @@ describe("YamlPolicy", () => {
     expect(reading).not.toBeInstanceOf(Policy);
     if (reading instanceof Policy) return;
     expect(reading.missing).toBe(false);
+  });
+});
+
+describe("the 002 schema delta", () => {
+  test("sessions-per-day is required — always, with its path (FR-083)", async () => {
+    const broken = MINIMAL.replace("    sessions-per-day: 20\n", "");
+    const reading = await policyFile(broken).then((source) => source.read());
+
+    expect(reading).not.toBeInstanceOf(Policy);
+    if (reading instanceof Policy) return;
+    expect(reading.problem).toContain("policy.limits.sessions-per-day");
+  });
+
+  test("sessions-per-drain has the named schema default", async () => {
+    const reading = await policyFile(MINIMAL).then((source) => source.read());
+
+    expect(reading).toBeInstanceOf(Policy);
+    if (!(reading instanceof Policy)) return;
+    expect(reading.limits.sessionsPerDrain).toBe(5);
+    expect(reading.limits.sessionsPerDay).toBe(20);
+  });
+
+  test("tracker file is a valid adapter choice — the DoD seed source until 003", async () => {
+    const withFile = MINIMAL.replace("repo:", "repo:\n  tracker: file");
+    const reading = await policyFile(withFile).then((source) => source.read());
+
+    expect(reading).toBeInstanceOf(Policy);
+    if (!(reading instanceof Policy)) return;
+    expect(reading.tracker).toBe("file");
   });
 });
