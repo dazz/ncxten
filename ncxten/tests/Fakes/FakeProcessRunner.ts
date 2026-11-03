@@ -119,7 +119,10 @@ export class FakeProcessRunner implements ProcessRunner, ProcessGroups {
     this.markEnds.push({ mark: projectMark, graceMs });
     for (const group of this.groupsStarted) {
       if (group.invocation.environment[MARK_PROJECT] !== projectMark) continue;
-      this.kill(group);
+      // The generation that awaited this exit is dead (the reaper runs at
+      // start-up) — the process dies, the promise stays pending, like a crash.
+      group.alive = false;
+      group.resolve = undefined;
     }
     for (let i = this.planted.length - 1; i >= 0; i -= 1) {
       if (this.planted[i]?.project === projectMark) this.planted.splice(i, 1);

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { automationName } from "~/Automations/Domain/Ids.ts";
-import { fail, hangUntilAborted } from "~/Automations/Infrastructure/FakeHarness.ts";
+import { automationName, subjectId } from "~/Automations/Domain/Ids.ts";
+import { IsoDuration } from "~/Automations/Domain/IsoDuration.ts";
 import { InMemoryEventLog } from "~/Automations/Infrastructure/InMemoryEventLog.ts";
+import { ManualClock } from "~/Shared/Clock.ts";
 import {
   composeTestProject,
   finding,
@@ -10,20 +11,21 @@ import {
   neverValid,
   settle,
   validAutomations,
+  validPolicy,
 } from "../../Composition.ts";
 
 describe("the tick", () => {
-  test("scenario 1 — idle tick: no findings, no session, the harness is never called", async () => {
-    const { tick, log, harness } = composeTestProject();
+  test("scenario 1 — idle tick: no findings, no session, no command started", async () => {
+    const { tick, log, runner } = composeTestProject();
 
     await tick();
 
     expect(log.names()).toEqual(["AutomationsLoaded", "ProjectIdled"]);
-    expect(harness.calls()).toEqual([]);
+    expect(runner.invocations()).toEqual([]);
   });
 
-  test("scenario 2 — one input, one session, the limits arrive in the harness", async () => {
-    const { tick, log, harness, tracker } = composeTestProject();
+  test("scenario 2 — one input, one session, the limits arrive in the environment", async () => {
+    const { tick, log, runner, tracker } = composeTestProject();
     tracker.present("board-walker", finding("ticket-42", "r1"));
 
     await tick();
@@ -31,6 +33,7 @@ describe("the tick", () => {
     expect(log.names()).toEqual([
       "AutomationsLoaded",
       "SessionStarted",
+      "SessionLaunched",
       "SessionFinished",
       "ProjectIdled",
     ]);
@@ -40,8 +43,9 @@ describe("the tick", () => {
     );
     expect(started?.name === "SessionStarted" && String(started.subject)).toBe("ticket-42");
     expect(started?.name === "SessionStarted" && String(started.revision)).toBe("r1");
-    expect(harness.calls()[0]?.limits.turns).toBe(50);
-    expect(harness.calls()[0]?.limits.time.text).toBe("PT20M");
+    // The limits travel as environment, a hint and an enforced bound (FR-061/080/081).
+    expect(runner.invocations()[0]?.environment.NCXTEN_TURNS).toBe("50");
+    expect(runner.invocations()[0]?.environment.NCXTEN_TIME_LIMIT).toBe("PT20M");
   });
 
   test("scenario 3 — an invalid turn keeps the last valid version in effect", async () => {
@@ -64,8 +68,8 @@ describe("the tick", () => {
   });
 
   test("scenario 5 — no parallel session: a tick during a drain is skipped", async () => {
-    const { tick, log, harness, tracker } = composeTestProject();
-    harness.script("board-walker", hangUntilAborted());
+    const { tick, log, runner, tracker } = composeTestProject();
+    runner.scriptGroup("board-walker", { kind: "hang" });
     tracker.present("board-walker", finding("ticket-42", "r1"));
 
     tick(); // hangs in the session
@@ -96,8 +100,8 @@ describe("the tick", () => {
   });
 
   test("scenario 9 — a failed session consumes its input: no retry loop", async () => {
-    const { tick, log, harness, tracker } = composeTestProject();
-    harness.script("board-walker", fail());
+    const { tick, log, runner, tracker } = composeTestProject();
+    runner.scriptGroup("board-walker", { kind: "exit", code: 2 });
     tracker.present("board-walker", finding("ticket-42", "r1"));
 
     await tick();
@@ -105,6 +109,7 @@ describe("the tick", () => {
     expect(afterFirst).toEqual([
       "AutomationsLoaded",
       "SessionStarted",
+      "SessionLaunched",
       "SessionFinished",
       "ProjectIdled",
     ]);
@@ -153,12 +158,75 @@ describe("the tick", () => {
         return Promise.reject(new Error("fsync failed: no space left on device"));
       }
     }
-    const { tick, harness, tracker } = composeTestProject({ log: new FullDisk() });
+    const { tick, runner, tracker } = composeTestProject({ log: new FullDisk() });
     tracker.present("board-walker", finding("ticket-42", "r1"));
 
     // The error propagates — main translates it to the error exit (74),
     // the supervisor restarts, the replay catches up.
     expect(tick()).rejects.toThrow("no space left on device");
-    expect(harness.calls()).toEqual([]);
+    expect(runner.invocations()).toEqual([]);
+  });
+});
+
+describe("the drain bounds (002)", () => {
+  function cappedPolicy(sessionsPerDrain: number, sessionsPerDay: number) {
+    return validPolicy({
+      limits: {
+        turns: 50,
+        time: IsoDuration.parse("PT20M", "x"),
+        sessionsPerDrain,
+        sessionsPerDay,
+      },
+    });
+  }
+
+  test("scenario 5 — the per-drain cap ends the drain; remaining input is next tick's first hit (FR-082)", async () => {
+    const { tick, log, tracker, status } = composeTestProject({
+      policy: cappedPolicy(2, 1000),
+    });
+    tracker.present("board-walker", finding("t1", "r1"));
+    tracker.present("board-walker", finding("t2", "r1"));
+    tracker.present("board-walker", finding("t3", "r1"));
+
+    await tick();
+
+    const names = log.names();
+    expect(names.filter((name) => name === "SessionStarted")).toHaveLength(2);
+    expect(names.at(-2)).toBe("DrainBounded");
+    expect(names.at(-1)).toBe("ProjectIdled");
+    // A capped project never looks like a quiet one (FR-084).
+    const report = await status();
+    expect(report.kind === "report" && report.lastDrainLimit?.bound).toBe("sessions-per-drain");
+
+    await tick();
+    expect(log.names().filter((name) => name === "SessionStarted")).toHaveLength(3);
+  });
+
+  test("scenario 6 — an exhausted day budget skips once per tick; input not consumed (FR-083)", async () => {
+    const clock = new ManualClock(new Date("2026-10-31T12:00:00.000Z"));
+    const { tick, log, tracker, context, status } = composeTestProject({
+      policy: cappedPolicy(5, 1),
+      clock,
+    });
+    tracker.present("board-walker", finding("t1", "r1"));
+    tracker.present("board-walker", finding("t2", "r1"));
+
+    await tick();
+
+    const names = log.names();
+    expect(names.filter((name) => name === "SessionStarted")).toHaveLength(1);
+    // Once per tick, never per pass — the drain ends on the budget.
+    expect(names.filter((name) => name === "BudgetExhausted")).toHaveLength(1);
+    expect(names.at(-1)).toBe("ProjectIdled");
+    expect(
+      context.project.consumedRevision(automationName("board-walker"), subjectId("t2")),
+    ).toBeUndefined();
+    const report = await status();
+    expect(report.kind === "report" && report.lastDrainLimit?.detail).toBe("started today 1 of 1");
+
+    // The day rolls over: the same input is due again (UTC day, FR-083).
+    clock.advanceBy(24 * 60 * 60 * 1000);
+    await tick();
+    expect(log.names().filter((name) => name === "SessionStarted")).toHaveLength(2);
   });
 });

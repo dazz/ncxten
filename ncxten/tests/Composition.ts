@@ -18,6 +18,7 @@ import { RequestTick } from "~/Automations/Application/RequestTick.ts";
 import { Resume } from "~/Automations/Application/Resume.ts";
 import { RunPass } from "~/Automations/Application/RunPass.ts";
 import { RunProject } from "~/Automations/Application/RunProject.ts";
+import { RunSession } from "~/Automations/Application/RunSession.ts";
 import { RunTick } from "~/Automations/Application/RunTick.ts";
 import { freshContext, StartProject } from "~/Automations/Application/StartProject.ts";
 import { Status } from "~/Automations/Application/Status.ts";
@@ -28,7 +29,6 @@ import type { Event, TickTrigger } from "~/Automations/Domain/Event.ts";
 import { automationName, commitId, revision, subjectId } from "~/Automations/Domain/Ids.ts";
 import { IsoDuration } from "~/Automations/Domain/IsoDuration.ts";
 import { Policy, type PolicyFields } from "~/Automations/Domain/Policy.ts";
-import { FakeHarness } from "~/Automations/Infrastructure/FakeHarness.ts";
 import { InMemoryEventLog } from "~/Automations/Infrastructure/InMemoryEventLog.ts";
 import { InMemoryTracker } from "~/Automations/Infrastructure/InMemoryTracker.ts";
 import { ManualClock } from "~/Shared/Clock.ts";
@@ -259,7 +259,6 @@ export function composeTestProject(options: TestProjectOptions = {}) {
   const policy = options.policy ?? validPolicy();
   const log = options.log ?? new InMemoryEventLog();
   const clock = options.clock ?? new ManualClock(new Date("2026-10-31T12:00:00.000Z"));
-  const harness = new FakeHarness();
   const runner = options.runner ?? new FakeProcessRunner();
   const runResult = new FakeRunResult();
   const tracker = new InMemoryTracker();
@@ -277,9 +276,19 @@ export function composeTestProject(options: TestProjectOptions = {}) {
   const scheduler = new FakeScheduler();
   const control = new FakeControl();
 
-  const runPass = new RunPass({ tracker, harness, log, clock }, context);
+  const repository = policy instanceof Policy ? policy.repository : "dazz/foo";
+  const runSession = new RunSession({ runner, runResult, log, clock, scheduler }, context, {
+    repository,
+    // Never written: the fake runner records the paths instead of using them.
+    sessionsDir: `/fake/state/projects/${repository}/sessions`,
+  });
+  const runPass = new RunPass({ tracker, clock }, context, runSession);
   const runTick = new RunTick({ automationsSource, log, clock }, context, runPass);
-  const startProject = new StartProject({ lock, log, policySource, clock }, context);
+  const startProject = new StartProject(
+    { lock, log, policySource, clock, runner },
+    context,
+    repository,
+  );
   const resumeProject = new Resume({ policySource, log, clock }, context);
   const statusQuery = new Status({ log, lock, policySource });
   const heartbeat = new RecordHeartbeat({ log, clock }, context);
@@ -297,9 +306,10 @@ export function composeTestProject(options: TestProjectOptions = {}) {
 
   return {
     context,
-    harness,
     runner,
     runResult,
+    runSession,
+    runPass,
     tracker,
     log,
     clock,

@@ -19,14 +19,14 @@ const limits = {
 };
 
 describe("Session", () => {
-  test("is open until the harness returns an outcome", () => {
+  test("is open until the process group ends", () => {
     const session = new Session(sessionId("s1"), walker, input, limits);
 
     expect(session.isOpen()).toBe(true);
     expect(session.outcome).toBeUndefined();
   });
 
-  test("finishes with the harness outcome", () => {
+  test("finishes with the exit-code outcome", () => {
     const finished = new Session(sessionId("s1"), walker, input, limits).finishedWith("failed");
 
     expect(finished.isOpen()).toBe(false);

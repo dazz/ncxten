@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { automationName, revision, subjectId } from "~/Automations/Domain/Ids.ts";
-import { hangUntilAborted } from "~/Automations/Infrastructure/FakeHarness.ts";
+import type { Event } from "~/Automations/Domain/Event.ts";
+import { automationName, revision, sessionId, subjectId } from "~/Automations/Domain/Ids.ts";
+import { InMemoryEventLog } from "~/Automations/Infrastructure/InMemoryEventLog.ts";
 import {
   composeTestProject,
   finding,
@@ -8,6 +9,7 @@ import {
   missingPolicy,
   settle,
 } from "../../Composition.ts";
+import { FakeProcessRunner } from "../../Fakes/FakeProcessRunner.ts";
 
 describe("the start sequence", () => {
   test("valid policy: lock → replay → ProjectStarted → PolicyLoaded, in that order", async () => {
@@ -54,11 +56,11 @@ describe("the start sequence", () => {
 
   test("crash during a session: the next generation aborts the orphan, input stays consumed", async () => {
     const first = composeTestProject();
-    first.harness.script("board-walker", hangUntilAborted());
+    first.runner.scriptGroup("board-walker", { kind: "hang" });
     first.tracker.present("board-walker", finding("ticket-42", "r1"));
     first.tick(); // never settles — the "crash"
     await settle();
-    expect(first.log.names().at(-1)).toBe("SessionStarted");
+    expect(first.log.names().at(-1)).toBe("SessionLaunched");
 
     const second = composeTestProject({ log: first.log });
     await second.start();
@@ -102,5 +104,90 @@ describe("the start sequence", () => {
 
     expect(await project.start()).toEqual({ kind: "lock-held" });
     expect(project.log.appended()).toEqual([]);
+  });
+});
+
+describe("the start-up reap (FR-070)", () => {
+  const at = new Date("2026-10-31T12:00:00.000Z");
+
+  function startedEvent(session = "s1"): Event {
+    return {
+      name: "SessionStarted",
+      at,
+      automation: automationName("board-walker"),
+      subject: subjectId("ticket-42"),
+      revision: revision("r1"),
+      sessionId: sessionId(session),
+    };
+  }
+
+  test("scenario 8 — record first, then every own-project mark ends (crash mid-session)", async () => {
+    const runner = new FakeProcessRunner();
+    const first = composeTestProject({ runner });
+    runner.scriptGroup("board-walker", { kind: "hang" });
+    first.tracker.present("board-walker", finding("ticket-42", "r1"));
+    first.tick(); // the "crash": the generation dies with the session open
+    await settle();
+    expect(runner.running()).toHaveLength(1);
+
+    const second = composeTestProject({ log: first.log, runner });
+    await second.start();
+
+    // The abort record precedes the reap (FR-043); the reap is mark-scoped.
+    const names = second.log.names();
+    expect(names.slice(names.lastIndexOf("ProjectStarted"))).toEqual([
+      "ProjectStarted",
+      "SessionAborted",
+      "PolicyLoaded",
+    ]);
+    expect(runner.markEnds.map((end) => end.mark)).toEqual(["dazz/foo"]);
+    expect(runner.running()).toEqual([]);
+  });
+
+  test("scenario 8b/9 — a sibling project's mark is never signaled", async () => {
+    const runner = new FakeProcessRunner();
+    runner.plant("dazz/other", "sibling-session");
+    const project = composeTestProject({ runner });
+
+    await project.start();
+
+    expect(runner.markEnds.map((end) => end.mark)).toEqual(["dazz/foo"]);
+    expect(runner.survivors()).toEqual([
+      { project: "dazz/other", session: "sibling-session", group: 9000 },
+    ]);
+  });
+
+  test("scenario 8c — a crash before the launch record: the scan is log-independent", async () => {
+    const log = new InMemoryEventLog();
+    await log.append(startedEvent()); // no SessionLaunched — crash between start and launch
+    const project = composeTestProject({ log });
+
+    await project.start();
+
+    const names = project.log.names();
+    expect(names.slice(1)).toEqual(["ProjectStarted", "SessionAborted", "PolicyLoaded"]);
+    // No unit was ever recorded — the mark scan still ran (FR-070).
+    expect(project.runner.markEnds.map((end) => end.mark)).toEqual(["dazz/foo"]);
+  });
+
+  test("scenario 8d — a second crash during cleanup: no open session, the scan still reaps", async () => {
+    const log = new InMemoryEventLog();
+    await log.append(startedEvent());
+    await log.append({
+      name: "SessionAborted",
+      at,
+      automation: automationName("board-walker"),
+      subject: subjectId("ticket-42"),
+      sessionId: sessionId("s1"),
+    });
+    const project = composeTestProject({ log });
+
+    await project.start();
+
+    // No new abort record — the replay shows no open session (idempotent)…
+    const names = project.log.names();
+    expect(names.filter((name) => name === "SessionAborted")).toHaveLength(1);
+    // …but the reap runs regardless: cleanup is repeatable until confirmed dead.
+    expect(project.runner.markEnds.map((end) => end.mark)).toEqual(["dazz/foo"]);
   });
 });

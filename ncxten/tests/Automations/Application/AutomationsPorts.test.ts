@@ -2,13 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type {
   AutomationsSource,
   EventLog,
-  Harness,
   InstanceLock,
   PolicySource,
   Tracker,
 } from "~/Automations/Application/AutomationsPorts.ts";
 import { automationName } from "~/Automations/Domain/Ids.ts";
-import { FakeHarness } from "~/Automations/Infrastructure/FakeHarness.ts";
 import { InMemoryEventLog } from "~/Automations/Infrastructure/InMemoryEventLog.ts";
 import { InMemoryTracker } from "~/Automations/Infrastructure/InMemoryTracker.ts";
 import {
@@ -28,7 +26,6 @@ import {
 describe("the ports and their in-memory adapters", () => {
   const log: EventLog = new InMemoryEventLog();
   const tracker: Tracker = new InMemoryTracker();
-  const harness: Harness = new FakeHarness();
   const policySource: PolicySource = new InMemoryPolicySource(validPolicy());
   const automationsSource: AutomationsSource = new InMemoryAutomationsSource(validAutomations());
   const lock: InstanceLock = new FakeInstanceLock();
@@ -54,10 +51,6 @@ describe("the ports and their in-memory adapters", () => {
     expect(await lock.acquire()).toBe(true);
     expect(lock.isHeld()).toBe(true);
     expect(await lock.acquire()).toBe(false);
-  });
-
-  test("Harness: runs a session", () => {
-    expect(typeof harness.run).toBe("function");
   });
 });
 

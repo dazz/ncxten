@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { hangUntilAborted } from "~/Automations/Infrastructure/FakeHarness.ts";
 import {
   composeTestProject,
   finding,
@@ -28,7 +27,7 @@ describe("the status query", () => {
   test("a live session shows running, with the lock held", async () => {
     const project = composeTestProject();
     await project.start();
-    project.harness.script("board-walker", hangUntilAborted());
+    project.runner.scriptGroup("board-walker", { kind: "hang" });
     project.tracker.present("board-walker", finding("ticket-42", "r1"));
     project.tick(); // hangs in the session
     await settle();
@@ -43,11 +42,11 @@ describe("the status query", () => {
   test("FR-025 — a dead session never shows running: the lock probe decides", async () => {
     const first = composeTestProject();
     await first.start();
-    first.harness.script("board-walker", hangUntilAborted());
+    first.runner.scriptGroup("board-walker", { kind: "hang" });
     first.tracker.present("board-walker", finding("ticket-42", "r1"));
     first.tick();
     await settle();
-    expect(first.log.names().at(-1)).toBe("SessionStarted");
+    expect(first.log.names().at(-1)).toBe("SessionLaunched");
 
     // The "crash": a fresh composition over the same log — nobody holds the lock.
     const second = composeTestProject({ log: first.log });

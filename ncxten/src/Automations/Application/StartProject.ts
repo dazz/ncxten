@@ -1,7 +1,9 @@
-import type {
-  EventLog,
-  InstanceLock,
-  PolicySource,
+import {
+  END_GRACE_MS,
+  type EventLog,
+  type InstanceLock,
+  type PolicySource,
+  type ProcessGroups,
 } from "~/Automations/Application/AutomationsPorts.ts";
 import type { Event } from "~/Automations/Domain/Event.ts";
 import { Policy } from "~/Automations/Domain/Policy.ts";
@@ -33,9 +35,9 @@ export type StartResult =
 /**
  * The start sequence of **every** process generation, one-shots included
  * (data-model): lock → replay → `ProjectStarted` → `SessionAborted(orphaned)`
- * per open session → read policy → `PolicyLoaded` or `ProjectPaused`.
- * Execution order and event order are the same; lock and log need no path
- * from the policy.
+ * per open session → mark reap (FR-070) → read policy → `PolicyLoaded` or
+ * `ProjectPaused`. Execution order and event order are the same; lock, log
+ * and reap need no path from the policy.
  */
 export class StartProject {
   constructor(
@@ -44,12 +46,15 @@ export class StartProject {
       readonly log: EventLog;
       readonly policySource: PolicySource;
       readonly clock: Clock;
+      readonly runner: ProcessGroups;
     },
     private readonly context: ProjectContext,
+    /** `owner/repo` — the project mark; the reap needs no policy (FR-070). */
+    private readonly repository: string,
   ) {}
 
   async run(): Promise<StartResult> {
-    const { lock, log, policySource, clock } = this.ports;
+    const { lock, log, policySource, clock, runner } = this.ports;
     if (!(await lock.acquire())) return { kind: "lock-held" };
 
     const project = new Project();
@@ -71,6 +76,8 @@ export class StartProject {
 
     const orphan = project.openSession();
     if (orphan !== undefined) {
+      // The record precedes the reap (FR-043); the logged unit stays the
+      // audit identity — the scan below is what actually ends processes.
       await this.record({
         name: "SessionAborted",
         at: clock.now(),
@@ -79,6 +86,13 @@ export class StartProject {
         sessionId: orphan.sessionId,
       });
     }
+
+    // End every process carrying the own project's mark (FR-070):
+    // log-independent — with one process per project, nothing marked may
+    // live at start, whatever the log says (a second crash during an
+    // earlier cleanup changes nothing but the number of attempts). Never
+    // the factory's own group, never a sibling project's marks.
+    await runner.endMarked(this.repository, END_GRACE_MS);
 
     reading ??= await policySource.read();
     if (reading instanceof Policy) {

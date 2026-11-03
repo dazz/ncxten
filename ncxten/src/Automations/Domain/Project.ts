@@ -234,6 +234,6 @@ function consumedKey(automation: string, subject: string): string {
 }
 
 /** The UTC calendar day, `YYYY-MM-DD` (decision 2026-11-02). */
-function utcDay(at: Date): string {
+export function utcDay(at: Date): string {
   return at.toISOString().slice(0, "YYYY-MM-DD".length);
 }
