@@ -1,0 +1,7 @@
+# What this repo proposes to automate (the policy allows — docs/automations).
+# One automation for now: the factory's proof-of-life for the 002 DoD run.
+# Real work on the factory's own code starts with project zero.
+automations:
+  - name: smoke
+    run: bash scripts/automations/smoke.sh   # the session: exit 0 = succeeded
+    gate: make ci                            # declared for 003; the script runs it itself today
