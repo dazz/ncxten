@@ -1,0 +1,10 @@
+{
+  "disableAllHooks": true,
+  "permissions": {
+    "deny": [
+      "Read(~/.local/state/ncxten/claude-config/**)",
+      "Edit(~/.local/state/ncxten/claude-config/**)",
+      "Write(~/.local/state/ncxten/claude-config/**)"
+    ]
+  }
+}

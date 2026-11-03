@@ -8,13 +8,15 @@ COPY ncxten/ ./
 RUN bun build --compile src/main.ts --outfile /ncxten-bin
 
 # Runtime: Debian slim, not Alpine — Claude Code under musl needs extra libraries (STACK).
-# Image contents since 002: the factory binary, git, the claude CLI (the harness, FR-095),
-# bun + make (project zero's gate `make ci`, FR-096). The Docker client joins with 003.
+# Image contents since 002: the factory binary, git, the claude CLI (FR-095) with its
+# managed settings, bun + make (project zero's gate `make ci`, FR-096) and jq (the example
+# run script maps claude's result JSON with it; doubles as the event log's debugging tool).
+# The Docker client joins with 003.
 FROM debian:bookworm-slim
 ARG S6_OVERLAY_VERSION=3.2.0.2
 ARG CLAUDE_CODE_VERSION=2.1.316
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates xz-utils curl make \
+  && apt-get install -y --no-install-recommends git ca-certificates xz-utils curl make jq \
   && rm -rf /var/lib/apt/lists/*
 # Claude Code via the native installer (STACK Harness), pinned; the install lands under
 # $HOME of the build (= /root), the symlink keeps it on PATH for any runtime HOME.
@@ -22,6 +24,11 @@ RUN apt-get update \
 RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION} \
   && ln -s /root/.local/bin/claude /usr/local/bin/claude \
   && claude --version
+# The managed settings are the ceiling for every claude run in the container — loaded from
+# /etc/claude-code on every invocation, excludable by no flag (verified, spike 2026-11-02):
+# hooks off, the factory-owned config home denied to agent tools. Baked into the image,
+# not on a volume: no session can edit it; changing it means a rebuild (FR-065).
+COPY docker/ncxten/managed-settings.json /etc/claude-code/managed-settings.json
 # Bun for project zero's toolchain (FR-096) — same pinned version as the build stage.
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 # Checksums pin the release artifacts (verified against the published .sha256 files);
